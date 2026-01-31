@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\InventoryBot.Domain\InventoryBot.Domain.csproj" />
+    <ProjectReference Include="..\InventoryBot.Application\InventoryBot.Application.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.2" />
