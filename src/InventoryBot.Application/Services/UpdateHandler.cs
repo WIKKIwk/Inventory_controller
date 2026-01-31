@@ -20,6 +20,7 @@ public class UpdateHandler
 
     private static readonly Dictionary<long, string> _userStates = new(); // State
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
+    private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
 
     public UpdateHandler(
         ITelegramBotClient botClient,
@@ -117,10 +118,24 @@ public class UpdateHandler
             }
             else if (state == "ADD_WAREHOUSE")
             {
+                // Compact Mode: Delete user input
+                try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
                 var warehouse = new Warehouse { Name = text };
                 await _warehouseRepository.AddAsync(warehouse);
                 _userStates.Remove(chatId);
-                await _botClient.SendMessage(chatId, _loc.Get("WarehouseAdded", lang, text), cancellationToken: ct);
+                
+                // Edit Admin Panel Back
+                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                {
+                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("WarehouseAdded", lang, text));
+                    _adminPanelMessageIds.Remove(chatId);
+                }
+                else
+                {
+                    await _botClient.SendMessage(chatId, _loc.Get("WarehouseAdded", lang, text), cancellationToken: ct);
+                    await ShowAdminPanel(chatId, lang, ct);
+                }
                 return;
             }
         }
@@ -135,8 +150,6 @@ public class UpdateHandler
                  var pass = await _configRepository.GetValueAsync("AdminPassword");
                  if (string.IsNullOrEmpty(pass))
                  {
-                     // Do not show "WaitAdmin" if system is not setup.
-                     // We will handle this in Language Selection or if they already have lang.
                      if (!string.IsNullOrEmpty(user.LanguageCode))
                      {
                          _userStates[chatId] = "SET_ADMIN_PASSWORD";
@@ -149,11 +162,6 @@ public class UpdateHandler
                     // Normal user waiting
                     if (!string.IsNullOrEmpty(user.LanguageCode))
                     {
-                        var msg = $"{_loc.Get("Welcome", user.LanguageCode)}\n{_loc.Get("WaitAdmin", user.LanguageCode)}";
-                        // We can't really "Welcome" string here because "Welcome" key currently says "Select Language".
-                        // I should verify Localization keys. 
-                        // "Welcome" key is "Welcome! Please select your language:".
-                        // I need a generic "Welcome" greeting or just use the WaitAdmin message.
                         await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", user.LanguageCode), cancellationToken: ct);
                         return;
                     }
@@ -162,8 +170,36 @@ public class UpdateHandler
             else
             {
                if (!string.IsNullOrEmpty(user.LanguageCode))
-                    await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", user.LanguageCode, user.Role), cancellationToken: ct);
+                    await ShowAdminPanel(chatId, user.LanguageCode, ct); // Show Panel directly on start for admins
             }
+            return;
+        }
+
+        if (text == "/admin")
+        {
+            try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
+            // Check if Password is Set (Global)
+            var password = await _configRepository.GetValueAsync("AdminPassword");
+            
+            if (string.IsNullOrEmpty(password))
+            {
+                // First time setup
+                _userStates[chatId] = "SET_ADMIN_PASSWORD";
+                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
+                return;
+            }
+
+            // Check Access
+            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
+            {
+                await ShowAdminPanel(chatId, user.LanguageCode!, ct);
+            }
+            else
+            {
+                await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
+            }
+            return;
         }
 
         // Language Selection Flow (Moved after /start checks to handle 'text' logic first if needed, but actually it was better before)
@@ -240,13 +276,11 @@ public class UpdateHandler
                  // Normal User Flow
                  if (user.Role == UserRole.User)
                  {
-                    // "LanguageSelected" message might be redundant if we just show the next status
-                    // User asked: "Welcome to system, wait for admin"
                     await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
                  }
                  else
                  {
-                     await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", selectedLang, user.Role), cancellationToken: ct);
+                     await ShowAdminPanel(chatId, selectedLang, ct);
                  }
             }
 
@@ -267,7 +301,7 @@ public class UpdateHandler
             var pendingUsers = await _userRepository.GetPendingUsersAsync();
             if (pendingUsers.Count == 0)
             {
-                 await _botClient.SendMessage(chatId, _loc.Get("NoPending", lang), cancellationToken: ct);
+                 await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoPending", lang), cancellationToken: ct);
                  return;
             }
             
@@ -275,9 +309,14 @@ public class UpdateHandler
             { 
                 InlineKeyboardButton.WithCallbackData($"{u.FullName} (@{u.Username})", $"user_select_{u.ChatId}") 
             }).ToList();
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel") });
 
-            await _botClient.SendMessage(chatId, _loc.Get("SelectUser", lang), 
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectUser", lang), 
                 replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        }
+        else if (data == "admin_back_to_panel")
+        {
+             await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: query.Message.MessageId);
         }
         else if (data.StartsWith("user_select_"))
         {
@@ -292,8 +331,9 @@ public class UpdateHandler
                  buttons.Insert(0, new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Deputy", lang), $"set_role_{targetId}_deputy") });
                  buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Admin", lang), $"set_role_{targetId}_admin") });
             }
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", "admin_show_waiting") });
 
-            await _botClient.SendMessage(chatId, _loc.Get("SelectRole", lang, targetId), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
         else if (data.StartsWith("set_role_"))
         {
@@ -308,7 +348,7 @@ public class UpdateHandler
                 var warehouses = await _warehouseRepository.GetAllAsync();
                 if (warehouses.Count == 0)
                 {
-                     await _botClient.SendMessage(chatId, _loc.Get("NoWarehouses", lang), cancellationToken: ct);
+                     await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoWarehouses", lang), cancellationToken: ct);
                      return;
                 }
 
@@ -318,8 +358,9 @@ public class UpdateHandler
                 { 
                      InlineKeyboardButton.WithCallbackData(w.Name, $"assign_wh_{w.Id}") 
                 }).ToList();
+                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", $"user_select_{targetId}") });
                 
-                 await _botClient.SendMessage(chatId, _loc.Get("SelectWarehouse", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+                 await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectWarehouse", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
                  return;
             }
 
@@ -339,6 +380,8 @@ public class UpdateHandler
         {
              _userStates[chatId] = "CHANGE_PASSWORD";
              await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
+             // Password change usually requires text input so we can't edit in-place easily 
+             // unless we make password change inline too, but let's focus on Warehouse first.
         }
         else if (data == "admin_add_warehouse")
         {
@@ -348,7 +391,16 @@ public class UpdateHandler
                  return;
             }
             _userStates[chatId] = "ADD_WAREHOUSE";
-            await _botClient.SendMessage(chatId, _loc.Get("EnterWarehouseName", lang), cancellationToken: ct);
+            _adminPanelMessageIds[chatId] = query.Message.MessageId;
+
+            var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_cancel_add"));
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterWarehouseName", lang), replyMarkup: cancelBtn, cancellationToken: ct);
+        }
+        else if (data == "admin_cancel_add")
+        {
+            _userStates.Remove(chatId);
+            _adminPanelMessageIds.Remove(chatId);
+            await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: query.Message.MessageId);
         }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
@@ -384,7 +436,7 @@ public class UpdateHandler
         }
     }
 
-    private async Task ShowAdminPanel(long chatId, string lang, CancellationToken ct)
+    private async Task ShowAdminPanel(long chatId, string lang, CancellationToken ct, int? messageIdToEdit = null, string? statusMessage = null)
     {
         var pendingCount = (await _userRepository.GetPendingUsersAsync()).Count;
 
@@ -395,6 +447,15 @@ public class UpdateHandler
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
         };
 
-        await _botClient.SendMessage(chatId, "Admin Panel:", replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        var text = statusMessage != null ? $"{statusMessage}\n\nAdmin Panel:" : "Admin Panel:";
+
+        if (messageIdToEdit.HasValue)
+        {
+            try { await _botClient.EditMessageText(chatId, messageIdToEdit.Value, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct); } catch {}
+        }
+        else
+        {
+            await _botClient.SendMessage(chatId, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        }
     }
 }
