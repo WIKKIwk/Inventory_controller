@@ -28,19 +28,19 @@ public class Worker : BackgroundService
         };
 
         _botClient.StartReceiving(
-            updateHandler: async (bot, update, ct) =>
+            async (bot, update, ct) =>
             {
                 using var scope = _serviceProvider.CreateScope();
                 var handler = scope.ServiceProvider.GetRequiredService<UpdateHandler>();
                 await handler.HandleUpdateAsync(update, ct);
             },
-            pollingErrorHandler: (bot, ex, ct) =>
+            (bot, ex, ct) =>
             {
                 _logger.LogError(ex, "Telegram API Error");
                 return Task.CompletedTask;
             },
-            receiverOptions: receiverOptions,
-            cancellationToken: stoppingToken
+            receiverOptions,
+            stoppingToken
         );
 
         await Task.Delay(-1, stoppingToken);
