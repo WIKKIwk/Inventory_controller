@@ -20,6 +20,14 @@ public interface IWarehouseRepository
     Task AddAsync(Warehouse warehouse);
 }
 
+public interface ICustomerRepository
+{
+    Task<List<Customer>> GetAllAsync();
+    Task<Customer?> GetByIdAsync(int id);
+    Task<Customer?> GetByNameAsync(string name);
+    Task AddAsync(Customer customer);
+}
+
 public interface IAppConfigRepository
 {
     Task<string?> GetValueAsync(string key);
