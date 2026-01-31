@@ -127,18 +127,64 @@ public class UpdateHandler
 
         if (text == "/start")
         {
+            try { await _botClient.DeleteMessageAsync(chatId, message.MessageId, cancellationToken: ct); } catch {}
+            
             if (user.Role == UserRole.User)
             {
-                await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", lang), cancellationToken: ct);
+                 // If password not set, this might be the first user
+                 var pass = await _configRepository.GetValueAsync("AdminPassword");
+                 if (string.IsNullOrEmpty(pass))
+                 {
+                     // Do not show "WaitAdmin" if system is not setup.
+                     // We will handle this in Language Selection or if they already have lang.
+                     if (!string.IsNullOrEmpty(user.LanguageCode))
+                     {
+                         _userStates[chatId] = "SET_ADMIN_PASSWORD";
+                         await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", user.LanguageCode), cancellationToken: ct);
+                         return;
+                     }
+                 }
+                 else
+                 {
+                    // Normal user waiting
+                    if (!string.IsNullOrEmpty(user.LanguageCode))
+                    {
+                        var msg = $"{_loc.Get("Welcome", user.LanguageCode)}\n{_loc.Get("WaitAdmin", user.LanguageCode)}";
+                        // We can't really "Welcome" string here because "Welcome" key currently says "Select Language".
+                        // I should verify Localization keys. 
+                        // "Welcome" key is "Welcome! Please select your language:".
+                        // I need a generic "Welcome" greeting or just use the WaitAdmin message.
+                        await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", user.LanguageCode), cancellationToken: ct);
+                        return;
+                    }
+                 }
             }
             else
             {
-               await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", lang, user.Role), cancellationToken: ct);
+               if (!string.IsNullOrEmpty(user.LanguageCode))
+                    await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", user.LanguageCode, user.Role), cancellationToken: ct);
             }
-            return;
         }
 
-        if (text == "/admin")
+        // Language Selection Flow (Moved after /start checks to handle 'text' logic first if needed, but actually it was better before)
+        // Let's keep original structure but add delete logic.
+        
+        if (string.IsNullOrEmpty(user.LanguageCode))
+        {
+             var langButtons = new InlineKeyboardMarkup(new[]
+             {
+                 new [] 
+                 { 
+                     InlineKeyboardButton.WithCallbackData("O'zbek 🇺🇿", "lang_uz"),
+                     InlineKeyboardButton.WithCallbackData("Русский 🇷🇺", "lang_ru"),
+                     InlineKeyboardButton.WithCallbackData("English 🇺🇸", "lang_en")
+                 }
+             });
+             await _botClient.SendMessage(chatId, "Welcome! Please select your language / Iltimos tilni tanlang / Пожалуйста, выберите язык:", replyMarkup: langButtons, cancellationToken: ct);
+             return;
+        }
+
+        var lang = user.LanguageCode;
         {
             // Check if Password is Set (Global)
             var password = await _configRepository.GetValueAsync("AdminPassword");
@@ -178,17 +224,31 @@ public class UpdateHandler
             var selectedLang = data.Split('_')[1]; // uz, ru, en
             user.LanguageCode = selectedLang;
             await _userRepository.UpdateAsync(user);
-            await _botClient.SendMessage(chatId, _loc.Get("LanguageSelected", selectedLang), cancellationToken: ct);
+
+            // Delete the "Select Language" message
+            try { await _botClient.DeleteMessageAsync(chatId, query.Message.MessageId, cancellationToken: ct); } catch {}
             
+            // Check Admin Password
             var pass = await _configRepository.GetValueAsync("AdminPassword");
             if (string.IsNullOrEmpty(pass))
             {
-                 await _botClient.SendMessage(chatId, "Type /admin to set up the system password.", cancellationToken: ct);
+                 // First user/setup flow - Prompt immediately
+                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
+                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", selectedLang), cancellationToken: ct);
             }
             else
             {
+                 // Normal User Flow
                  if (user.Role == UserRole.User)
+                 {
+                    // "LanguageSelected" message might be redundant if we just show the next status
+                    // User asked: "Welcome to system, wait for admin"
                     await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
+                 }
+                 else
+                 {
+                     await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", selectedLang, user.Role), cancellationToken: ct);
+                 }
             }
 
             await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
