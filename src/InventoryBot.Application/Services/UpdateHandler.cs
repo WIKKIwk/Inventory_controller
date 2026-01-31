@@ -159,6 +159,46 @@ public class UpdateHandler
                 }
                 return;
             }
+            else if (state == "ADD_CUSTOMER")
+            {
+                // Compact Mode: Delete user input
+                try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
+                // Check for duplicate customer name
+                var existing = await _customerRepository.GetByNameAsync(text);
+                if (existing != null)
+                {
+                    _userStates.Remove(chatId);
+                    if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                    {
+                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("CustomerDuplicate", lang, text));
+                        _adminPanelMessageIds.Remove(chatId);
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(chatId, _loc.Get("CustomerDuplicate", lang, text), cancellationToken: ct);
+                        await ShowAdminPanel(chatId, lang, ct);
+                    }
+                    return;
+                }
+
+                var customer = new Customer { Name = text };
+                await _customerRepository.AddAsync(customer);
+                _userStates.Remove(chatId);
+                
+                // Edit Admin Panel Back
+                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId3))
+                {
+                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId3, statusMessage: _loc.Get("CustomerAdded", lang, text));
+                    _adminPanelMessageIds.Remove(chatId);
+                }
+                else
+                {
+                    await _botClient.SendMessage(chatId, _loc.Get("CustomerAdded", lang, text), cancellationToken: ct);
+                    await ShowAdminPanel(chatId, lang, ct);
+                }
+                return;
+            }
         }
 
         if (text == "/start")
