@@ -10,5 +10,6 @@ public class BotUser
     public UserRole Role { get; set; } = UserRole.User;
     public UserStatus Status { get; set; } = UserStatus.Pending;
     public string? LanguageCode { get; set; }
+    public int? WarehouseId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

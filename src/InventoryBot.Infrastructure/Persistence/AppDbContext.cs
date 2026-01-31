@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
 {
     public DbSet<BotUser> Users { get; set; }
     public DbSet<AppConfig> Configs { get; set; }
+    public DbSet<Warehouse> Warehouses { get; set; }
 
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 

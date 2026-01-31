@@ -12,6 +12,13 @@ public interface IUserRepository
     Task<List<BotUser>> GetAllUsersAsync(); 
 }
 
+public interface IWarehouseRepository
+{
+    Task<List<Warehouse>> GetAllAsync();
+    Task<Warehouse?> GetByIdAsync(int id);
+    Task AddAsync(Warehouse warehouse);
+}
+
 public interface IAppConfigRepository
 {
     Task<string?> GetValueAsync(string key);
