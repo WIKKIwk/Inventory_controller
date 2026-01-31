@@ -40,7 +40,14 @@ public class LocalizationService
             ["SelectWarehouse"] = "Foydalanuvchini qaysi omborga biriktirasiz?",
             ["UserAssignedToWarehouse"] = "Foydalanuvchi {0} omboriga biriktirildi.",
             ["NoWarehouses"] = "Hozircha omborlar yo'q. Avval ombor qo'shing.",
-            ["NoCustomers"] = "Hozircha xaridorlar yo'q. Avval xaridor qo'shing."
+            ["NoCustomers"] = "Hozircha xaridorlar yo'q. Avval xaridor qo'shing.",
+            ["Menu_Warehouses"] = "📦 Omborlar",
+            ["Menu_Customers"] = "👥 Xaridorlar",
+            ["Btn_Add"] = "Qo'shish",
+            ["Btn_List"] = "Ro'yxat",
+            ["Btn_Back"] = "🔙 Ortga",
+            ["Title_ManageWarehouses"] = "Omborlar boshqaruvi:",
+            ["Title_ManageCustomers"] = "Xaridorlar boshqaruvi:"
         },
         ["ru"] = new()
         {
@@ -78,7 +85,14 @@ public class LocalizationService
             ["SelectWarehouse"] = "К какому складу прикрепить пользователя?",
             ["UserAssignedToWarehouse"] = "Пользователь прикреплен к складу {0}.",
             ["NoWarehouses"] = "Складов пока нет. Сначала добавьте склад.",
-            ["NoCustomers"] = "Клиентов пока нет. Сначала добавьте клиента."
+            ["NoCustomers"] = "Клиентов пока нет. Сначала добавьте клиента.",
+            ["Menu_Warehouses"] = "📦 Склады",
+            ["Menu_Customers"] = "👥 Клиенты",
+            ["Btn_Add"] = "Добавить",
+            ["Btn_List"] = "Список",
+            ["Btn_Back"] = "🔙 Назад",
+            ["Title_ManageWarehouses"] = "Управление складами:",
+            ["Title_ManageCustomers"] = "Управление клиентами:"
         },
         ["en"] = new()
         {
@@ -116,7 +130,14 @@ public class LocalizationService
             ["SelectWarehouse"] = "Select warehouse to assign:",
             ["UserAssignedToWarehouse"] = "User assigned to warehouse {0}.",
             ["NoWarehouses"] = "No warehouses found. Add a warehouse first.",
-            ["NoCustomers"] = "No customers found. Add a customer first."
+            ["NoCustomers"] = "No customers found. Add a customer first.",
+            ["Menu_Warehouses"] = "📦 Warehouses",
+            ["Menu_Customers"] = "👥 Customers",
+            ["Btn_Add"] = "Add",
+            ["Btn_List"] = "List",
+            ["Btn_Back"] = "🔙 Back",
+            ["Title_ManageWarehouses"] = "Manage Warehouses:",
+            ["Title_ManageCustomers"] = "Manage Customers:"
         }
     };
 
