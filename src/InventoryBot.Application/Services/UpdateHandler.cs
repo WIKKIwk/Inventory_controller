@@ -420,6 +420,21 @@ public class UpdateHandler
             _adminPanelMessageIds.Remove(chatId);
             await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: query.Message.MessageId);
         }
+        else if (data == "admin_warehouse_list")
+        {
+            var warehouses = await _warehouseRepository.GetAllAsync();
+            if (warehouses.Count == 0)
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoWarehouses", lang), cancellationToken: ct);
+                return;
+            }
+
+            var warehouseList = string.Join("\n", warehouses.Select((w, i) => $"{i + 1}. {w.Name}"));
+            var message = $"{_loc.Get("WarehouseListTitle", lang)}\n\n{warehouseList}";
+            
+            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel"));
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, message, replyMarkup: backButton, cancellationToken: ct);
+        }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
     }
