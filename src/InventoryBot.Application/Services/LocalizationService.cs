@@ -50,6 +50,7 @@ public class LocalizationService
             ["Title_ManageCustomers"] = "Xaridorlar boshqaruvi:",
             ["EnterOldPassword"] = "🔒 Iltimos, avval eski parolni kiriting:",
             ["OldPasswordIncorrect"] = "❌ Eski parol noto'g'ri!",
+            ["NewPasswordSameAsOld"] = "❌ Yangi parol eski parol bilan bir xil bo'lishi mumkin emas!",
             ["Btn_Close"] = "❌ Yopish"
         },
         ["ru"] = new()
@@ -98,6 +99,7 @@ public class LocalizationService
             ["Title_ManageCustomers"] = "Управление клиентами:",
             ["EnterOldPassword"] = "🔒 Пожалуйста, введите старый пароль:",
             ["OldPasswordIncorrect"] = "❌ Старый пароль неверен!",
+            ["NewPasswordSameAsOld"] = "❌ Новый пароль не может совпадать со старым!",
             ["Btn_Close"] = "❌ Закрыть"
         },
         ["en"] = new()
@@ -146,6 +148,7 @@ public class LocalizationService
             ["Title_ManageCustomers"] = "Manage Customers:",
             ["EnterOldPassword"] = "🔒 Please enter your old password first:",
             ["OldPasswordIncorrect"] = "❌ Old password incorrect!",
+            ["NewPasswordSameAsOld"] = "❌ New password cannot be the same as the old one!",
             ["Btn_Close"] = "❌ Close"
         }
     };
