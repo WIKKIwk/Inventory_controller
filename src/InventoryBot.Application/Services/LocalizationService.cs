@@ -24,7 +24,13 @@ public class LocalizationService
             ["Action_Storekeeper"] = "Omborchi qilish",
             ["Action_Admin"] = "Admin qilish",
             ["Btn_Notifications"] = "Bildirishnomalar (Kutayotganlar: {0})",
-            ["Btn_ChangePass"] = "Parolni o'zgartirish"
+            ["Btn_ChangePass"] = "Parolni o'zgartirish",
+            ["Btn_AddWarehouse"] = "Ombor qo'shish",
+            ["EnterWarehouseName"] = "Ombor nomini kiriting:",
+            ["WarehouseAdded"] = "Ombor muvaffaqiyatli qo'shildi: {0}",
+            ["SelectWarehouse"] = "Foydalanuvchini qaysi omborga biriktirasiz?",
+            ["UserAssignedToWarehouse"] = "Foydalanuvchi {0} omboriga biriktirildi.",
+            ["NoWarehouses"] = "Hozircha omborlar yo'q. Avval ombor qo'shing."
         },
         ["ru"] = new()
         {
@@ -46,7 +52,13 @@ public class LocalizationService
             ["Action_Storekeeper"] = "Сделать кладовщиком",
             ["Action_Admin"] = "Сделать админом",
             ["Btn_Notifications"] = "Уведомления (Ожидают: {0})",
-            ["Btn_ChangePass"] = "Изменить пароль"
+            ["Btn_ChangePass"] = "Изменить пароль",
+            ["Btn_AddWarehouse"] = "Добавить склад",
+            ["EnterWarehouseName"] = "Введите название склада:",
+            ["WarehouseAdded"] = "Склад успешно добавлен: {0}",
+            ["SelectWarehouse"] = "К какому складу прикрепить пользователя?",
+            ["UserAssignedToWarehouse"] = "Пользователь прикреплен к складу {0}.",
+            ["NoWarehouses"] = "Складов пока нет. Сначала добавьте склад."
         },
         ["en"] = new()
         {
@@ -68,7 +80,13 @@ public class LocalizationService
             ["Action_Storekeeper"] = "Make Storekeeper",
             ["Action_Admin"] = "Make Admin",
             ["Btn_Notifications"] = "Notifications (Waiting: {0})",
-            ["Btn_ChangePass"] = "Change Password"
+            ["Btn_ChangePass"] = "Change Password",
+            ["Btn_AddWarehouse"] = "Add Warehouse",
+            ["EnterWarehouseName"] = "Enter warehouse name:",
+            ["WarehouseAdded"] = "Warehouse added successfully: {0}",
+            ["SelectWarehouse"] = "Select warehouse to assign:",
+            ["UserAssignedToWarehouse"] = "User assigned to warehouse {0}.",
+            ["NoWarehouses"] = "No warehouses found. Add a warehouse first."
         }
     };
 
