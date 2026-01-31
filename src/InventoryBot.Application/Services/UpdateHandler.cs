@@ -332,6 +332,16 @@ public class UpdateHandler
                 return;
             }
 
+            if (user.Role == UserRole.Pending || user.Role == UserRole.User)
+            {
+                _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
+                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
+            }
+            else if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
+            {
+               await ShowAdminPanel(chatId, lang, ct);
+            }
+            else
             {
                 await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
             }
