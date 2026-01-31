@@ -521,6 +521,8 @@ public class UpdateHandler
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddWarehouse", lang), "admin_add_warehouse") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_WarehouseList", lang), "admin_warehouse_list") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddCustomer", lang), "admin_add_customer") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_CustomerList", lang), "admin_customer_list") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
         };
 
