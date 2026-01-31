@@ -27,13 +27,20 @@ public class LocalizationService
             ["Btn_ChangePass"] = "Parolni o'zgartirish",
             ["Btn_AddWarehouse"] = "Ombor qo'shish",
             ["Btn_WarehouseList"] = "Omborlar ro'yxati",
+            ["Btn_AddCustomer"] = "Xaridor qo'shish",
+            ["Btn_CustomerList"] = "Xaridorlar ro'yxati",
             ["EnterWarehouseName"] = "Ombor nomini kiriting:",
             ["WarehouseAdded"] = "Ombor muvaffaqiyatli qo'shildi: {0}",
             ["WarehouseDuplicate"] = "❌ Bu nomdagi ombor allaqachon mavjud: {0}",
             ["WarehouseListTitle"] = "📦 Omborlar ro'yxati:",
+            ["EnterCustomerName"] = "Xaridor nomini kiriting:",
+            ["CustomerAdded"] = "Xaridor muvaffaqiyatli qo'shildi: {0}",
+            ["CustomerDuplicate"] = "❌ Bu nomdagi xaridor allaqachon mavjud: {0}",
+            ["CustomerListTitle"] = "👥 Xaridorlar ro'yxati:",
             ["SelectWarehouse"] = "Foydalanuvchini qaysi omborga biriktirasiz?",
             ["UserAssignedToWarehouse"] = "Foydalanuvchi {0} omboriga biriktirildi.",
-            ["NoWarehouses"] = "Hozircha omborlar yo'q. Avval ombor qo'shing."
+            ["NoWarehouses"] = "Hozircha omborlar yo'q. Avval ombor qo'shing.",
+            ["NoCustomers"] = "Hozircha xaridorlar yo'q. Avval xaridor qo'shing."
         },
         ["ru"] = new()
         {
@@ -58,13 +65,20 @@ public class LocalizationService
             ["Btn_ChangePass"] = "Изменить пароль",
             ["Btn_AddWarehouse"] = "Добавить склад",
             ["Btn_WarehouseList"] = "Список складов",
+            ["Btn_AddCustomer"] = "Добавить клиента",
+            ["Btn_CustomerList"] = "Список клиентов",
             ["EnterWarehouseName"] = "Введите название склада:",
             ["WarehouseAdded"] = "Склад успешно добавлен: {0}",
             ["WarehouseDuplicate"] = "❌ Склад с таким названием уже существует: {0}",
             ["WarehouseListTitle"] = "📦 Список складов:",
+            ["EnterCustomerName"] = "Введите имя клиента:",
+            ["CustomerAdded"] = "Клиент успешно добавлен: {0}",
+            ["CustomerDuplicate"] = "❌ Клиент с таким именем уже существует: {0}",
+            ["CustomerListTitle"] = "👥 Список клиентов:",
             ["SelectWarehouse"] = "К какому складу прикрепить пользователя?",
             ["UserAssignedToWarehouse"] = "Пользователь прикреплен к складу {0}.",
-            ["NoWarehouses"] = "Складов пока нет. Сначала добавьте склад."
+            ["NoWarehouses"] = "Складов пока нет. Сначала добавьте склад.",
+            ["NoCustomers"] = "Клиентов пока нет. Сначала добавьте клиента."
         },
         ["en"] = new()
         {
@@ -89,13 +103,20 @@ public class LocalizationService
             ["Btn_ChangePass"] = "Change Password",
             ["Btn_AddWarehouse"] = "Add Warehouse",
             ["Btn_WarehouseList"] = "Warehouse List",
+            ["Btn_AddCustomer"] = "Add Customer",
+            ["Btn_CustomerList"] = "Customer List",
             ["EnterWarehouseName"] = "Enter warehouse name:",
             ["WarehouseAdded"] = "Warehouse added successfully: {0}",
             ["WarehouseDuplicate"] = "❌ A warehouse with this name already exists: {0}",
             ["WarehouseListTitle"] = "📦 Warehouse List:",
+            ["EnterCustomerName"] = "Enter customer name:",
+            ["CustomerAdded"] = "Customer added successfully: {0}",
+            ["CustomerDuplicate"] = "❌ A customer with this name already exists: {0}",
+            ["CustomerListTitle"] = "👥 Customer List:",
             ["SelectWarehouse"] = "Select warehouse to assign:",
             ["UserAssignedToWarehouse"] = "User assigned to warehouse {0}.",
-            ["NoWarehouses"] = "No warehouses found. Add a warehouse first."
+            ["NoWarehouses"] = "No warehouses found. Add a warehouse first.",
+            ["NoCustomers"] = "No customers found. Add a customer first."
         }
     };
 
