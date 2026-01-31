@@ -332,7 +332,9 @@ public class UpdateHandler
                 return;
             }
 
-            if (user.Role == UserRole.Pending || user.Role == UserRole.User)
+            // Pending is a STATUS, not a ROLE in Enums. 
+            // Role default is User (0).
+            if (user.Role == UserRole.User)
             {
                 _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
