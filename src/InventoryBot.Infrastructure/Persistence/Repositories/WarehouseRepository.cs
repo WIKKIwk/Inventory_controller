@@ -23,6 +23,11 @@ public class WarehouseRepository : IWarehouseRepository
         return await _context.Warehouses.FindAsync(id);
     }
 
+    public async Task<Warehouse?> GetByNameAsync(string name)
+    {
+        return await _context.Warehouses.FirstOrDefaultAsync(w => w.Name == name);
+    }
+
     public async Task AddAsync(Warehouse warehouse)
     {
         await _context.Warehouses.AddAsync(warehouse);
