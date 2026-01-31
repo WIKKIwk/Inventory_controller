@@ -454,7 +454,7 @@ public class UpdateHandler
             _userStates[chatId] = "ADD_WAREHOUSE";
             _adminPanelMessageIds[chatId] = query.Message.MessageId;
 
-            var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_cancel_add"));
+            var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_warehouses_menu"));
             await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterWarehouseName", lang), replyMarkup: cancelBtn, cancellationToken: ct);
         }
         else if (data == "admin_cancel_add")
@@ -475,8 +475,23 @@ public class UpdateHandler
             var warehouseList = string.Join("\n", warehouses.Select((w, i) => $"{i + 1}. {w.Name}"));
             var message = $"{_loc.Get("WarehouseListTitle", lang)}\n\n{warehouseList}";
             
-            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel"));
+            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_warehouses_menu"));
             await _botClient.EditMessageText(chatId, query.Message.MessageId, message, replyMarkup: backButton, cancellationToken: ct);
+        }
+        else if (data == "admin_warehouses_menu")
+        {
+            _userStates.Remove(chatId); // Clear any input state (like ADD_WAREHOUSE)
+            var buttons = new List<InlineKeyboardButton[]>
+            {
+                new [] 
+                { 
+                    InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Add", lang), "admin_add_warehouse"),
+                    InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_List", lang), "admin_warehouse_list")
+                },
+                new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel") }
+            };
+            
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("Title_ManageWarehouses", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
         else if (data == "admin_add_customer")
         {
@@ -490,7 +505,7 @@ public class UpdateHandler
              _userStates[chatId] = "ADD_CUSTOMER";
              _adminPanelMessageIds[chatId] = query.Message.MessageId;
 
-             var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_cancel_add"));
+             var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_customers_menu"));
              await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterCustomerName", lang), replyMarkup: cancelBtn, cancellationToken: ct);
         }
         else if (data == "admin_customer_list")
@@ -505,8 +520,23 @@ public class UpdateHandler
             var customerList = string.Join("\n", customers.Select((c, i) => $"{i + 1}. {c.Name}"));
             var message = $"{_loc.Get("CustomerListTitle", lang)}\n\n{customerList}";
             
-            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel"));
+            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_customers_menu"));
             await _botClient.EditMessageText(chatId, query.Message.MessageId, message, replyMarkup: backButton, cancellationToken: ct);
+        }
+        else if (data == "admin_customers_menu")
+        {
+            _userStates.Remove(chatId); // Clear any input state
+            var buttons = new List<InlineKeyboardButton[]>
+            {
+                new [] 
+                { 
+                    InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Add", lang), "admin_add_customer"),
+                    InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_List", lang), "admin_customer_list")
+                },
+                new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel") }
+            };
+            
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("Title_ManageCustomers", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
@@ -549,10 +579,7 @@ public class UpdateHandler
         var buttons = new List<InlineKeyboardButton[]>
         {
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
-            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddWarehouse", lang), "admin_add_warehouse") },
-            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_WarehouseList", lang), "admin_warehouse_list") },
-            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddCustomer", lang), "admin_add_customer") },
-            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_CustomerList", lang), "admin_customer_list") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Warehouses", lang), "admin_warehouses_menu"), InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Customers", lang), "admin_customers_menu") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
         };
 
