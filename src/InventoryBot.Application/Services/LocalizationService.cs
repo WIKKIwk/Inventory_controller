@@ -47,7 +47,10 @@ public class LocalizationService
             ["Btn_List"] = "Ro'yxat",
             ["Btn_Back"] = "🔙 Ortga",
             ["Title_ManageWarehouses"] = "Omborlar boshqaruvi:",
-            ["Title_ManageCustomers"] = "Xaridorlar boshqaruvi:"
+            ["Title_ManageCustomers"] = "Xaridorlar boshqaruvi:",
+            ["EnterOldPassword"] = "🔒 Iltimos, avval eski parolni kiriting:",
+            ["OldPasswordIncorrect"] = "❌ Eski parol noto'g'ri!",
+            ["Btn_Close"] = "❌ Yopish"
         },
         ["ru"] = new()
         {
@@ -92,7 +95,10 @@ public class LocalizationService
             ["Btn_List"] = "Список",
             ["Btn_Back"] = "🔙 Назад",
             ["Title_ManageWarehouses"] = "Управление складами:",
-            ["Title_ManageCustomers"] = "Управление клиентами:"
+            ["Title_ManageCustomers"] = "Управление клиентами:",
+            ["EnterOldPassword"] = "🔒 Пожалуйста, введите старый пароль:",
+            ["OldPasswordIncorrect"] = "❌ Старый пароль неверен!",
+            ["Btn_Close"] = "❌ Закрыть"
         },
         ["en"] = new()
         {
@@ -137,7 +143,10 @@ public class LocalizationService
             ["Btn_List"] = "List",
             ["Btn_Back"] = "🔙 Back",
             ["Title_ManageWarehouses"] = "Manage Warehouses:",
-            ["Title_ManageCustomers"] = "Manage Customers:"
+            ["Title_ManageCustomers"] = "Manage Customers:",
+            ["EnterOldPassword"] = "🔒 Please enter your old password first:",
+            ["OldPasswordIncorrect"] = "❌ Old password incorrect!",
+            ["Btn_Close"] = "❌ Close"
         }
     };
 
