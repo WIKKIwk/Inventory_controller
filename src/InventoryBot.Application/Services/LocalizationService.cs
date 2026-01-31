@@ -12,6 +12,7 @@ public class LocalizationService
             ["WelcomeBack"] = "Xush kelibsiz, {0}. Panel uchun /admin deb yozing.",
             ["PasswordSet"] = "Parol o'rnatildi. Siz endi Asosiy Adminsiz. Kirish uchun /admin deb yozing.",
             ["EnterPassword"] = "Tizim ishga tushmagan. Yangi Admin parolini kiriting:",
+            ["EnterExistingPassword"] = "Sizda Admin Panelga kirish huquqing yo'q. Admin parolini kiriting:",
             ["AccessDenied"] = "Sizda Admin Panelga kirish huquqi yo'q.",
             ["NoPending"] = "Tasdiqlashni kutayotganlar yo'q.",
             ["SelectUser"] = "Foydalanuvchini tanlang:",

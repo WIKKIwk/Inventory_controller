@@ -341,7 +341,7 @@ public class UpdateHandler
             {
                 // Always ask for password
                 _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
             }
             return;
         }
