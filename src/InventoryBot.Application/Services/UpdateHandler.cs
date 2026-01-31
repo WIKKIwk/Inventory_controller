@@ -478,6 +478,36 @@ public class UpdateHandler
             var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel"));
             await _botClient.EditMessageText(chatId, query.Message.MessageId, message, replyMarkup: backButton, cancellationToken: ct);
         }
+        else if (data == "admin_add_customer")
+        {
+             // Check permissions if needed (Admin only)
+             var userRole = (await _userRepository.GetByChatIdAsync(chatId))?.Role;
+             if (userRole != UserRole.Admin)
+             {
+                  await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
+                  return;
+             }
+             _userStates[chatId] = "ADD_CUSTOMER";
+             _adminPanelMessageIds[chatId] = query.Message.MessageId;
+
+             var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_cancel_add"));
+             await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterCustomerName", lang), replyMarkup: cancelBtn, cancellationToken: ct);
+        }
+        else if (data == "admin_customer_list")
+        {
+            var customers = await _customerRepository.GetAllAsync();
+            if (customers.Count == 0)
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoCustomers", lang), cancellationToken: ct);
+                return;
+            }
+
+            var customerList = string.Join("\n", customers.Select((c, i) => $"{i + 1}. {c.Name}"));
+            var message = $"{_loc.Get("CustomerListTitle", lang)}\n\n{customerList}";
+            
+            var backButton = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("🔙", "admin_back_to_panel"));
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, message, replyMarkup: backButton, cancellationToken: ct);
+        }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
     }
