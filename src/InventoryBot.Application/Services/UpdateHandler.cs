@@ -111,18 +111,14 @@ public class UpdateHandler
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
                 
-                // Add to session
-                _authenticatedAdmins.Add(chatId);
-                
-                // If this is the FIRST admin ever, maybe we still want to save them as Admin? 
-                // The user asked NOT to link to ID. So we just authenticate session.
-                // However, for the very first setup, it's usually safer to have one permanent admin.
-                // BUT user said "don't link to admin id at all". So we obey. 
-                // We just rely on password.
+                // Save user as Admin in DB permanently
+                user.Role = UserRole.Admin;
+                user.Status = UserStatus.Active;
+                await _userRepository.UpdateAsync(user);
                 
                 _userStates.Remove(chatId);
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
-                await ShowAdminPanel(chatId, lang, ct); // Show panel immediately
+                await ShowAdminPanel(chatId, lang, ct);
                 return;
             }
             else if (state == "ENTER_ADMIN_PASSWORD")
@@ -133,8 +129,12 @@ public class UpdateHandler
                 var adminPass = await _configRepository.GetValueAsync("AdminPassword");
                 if (text == adminPass)
                 {
+                    // Save user as Admin in DB permanently
+                    user.Role = UserRole.Admin;
+                    user.Status = UserStatus.Active;
+                    await _userRepository.UpdateAsync(user);
+                    
                     _userStates.Remove(chatId);
-                    _authenticatedAdmins.Add(chatId); // Authenticate session
                     await ShowAdminPanel(chatId, lang, ct);
                 }
                 else
@@ -346,14 +346,14 @@ public class UpdateHandler
                 return;
             }
 
-            // Session Check: If authenticated session exists, allow access.
-            if (_authenticatedAdmins.Contains(chatId))
+            // Check user role from DB
+            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
             {
                await ShowAdminPanel(chatId, lang, ct);
             }
             else
             {
-                // Not authenticated for this session, ask for password.
+                // Not admin, ask for password
                 _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
             }
@@ -403,27 +403,20 @@ public class UpdateHandler
 
         var lang = user.LanguageCode ?? "uz"; 
 
-        // Admin Access Check for Callbacks
-        // Allow if in session OR if user is Deputy (Deputy role is still persistent maybe? 
-        // User requested Admin ID not be linked. Deputy/Storekeeper roles likely remain persistent for staff management.
-        // Assuming we only change Admin access behavior.)
-        bool isSessionAdmin = _authenticatedAdmins.Contains(chatId);
-        bool isDeputy = user.Role == UserRole.Deputy;
+        // Check admin/deputy role from DB for admin actions
+        bool isAdmin = user.Role == UserRole.Admin || user.Role == UserRole.Deputy;
 
         // Special case: Sklad callbacks are for Storekeepers
         if (data == "sklad_add_product" || data.StartsWith("set_unit_"))
         {
-             // These are handled below indiscriminately of admin session, but rely on role.
-             // We can let them pass through.
+             // These are handled below for storekeeper role
         }
-        else 
+        else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_"))
         {
-             // For all other callbacks (admin_*), require authentication
-             if (!isSessionAdmin && !isDeputy && (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_")))
+             // For admin callbacks, require admin role
+             if (!isAdmin)
              {
-                 await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized / Session Expired", cancellationToken: ct);
-                 // Optionally prompt for password again? 
-                 // For now just deny. User can run /admin again.
+                 await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized", cancellationToken: ct);
                  return;
              }
         }
