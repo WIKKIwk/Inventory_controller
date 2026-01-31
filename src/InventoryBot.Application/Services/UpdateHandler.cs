@@ -335,8 +335,12 @@ public class UpdateHandler
 
             var password = await _configRepository.GetValueAsync("AdminPassword");
             
+            _logger.LogInformation("Admin password check: IsNull={IsNull}, IsEmpty={IsEmpty}, Value={Value}", 
+                password == null, string.IsNullOrEmpty(password), password ?? "NULL");
+            
             if (string.IsNullOrEmpty(password))
             {
+                _logger.LogWarning("Password is empty, switching to SET_ADMIN_PASSWORD state");
                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
                 return;
