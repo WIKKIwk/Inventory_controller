@@ -33,18 +33,35 @@ builder.Services.AddHostedService<Worker>();
 
 var host = builder.Build();
 
-// Ensure DB Created
+// Ensure DB Created with Retry Logic
 using (var scope = host.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    // Wait for DB to be ready (rudimentary retry logic could be added here for docker)
-    try 
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    var db = services.GetRequiredService<AppDbContext>();
+    
+    var retryCount = 0;
+    while (retryCount < 10)
     {
-        await db.Database.EnsureCreatedAsync();
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"DB Creation check failed (will retry in loop if transient): {ex.Message}");
+        try 
+        {
+            logger.LogInformation("Attempting to connect to database... ({Attempt}/10)", retryCount + 1);
+            await db.Database.EnsureCreatedAsync();
+            logger.LogInformation("Database connection established and schema ensured.");
+            break;
+        }
+        catch (Exception ex)
+        {
+            retryCount++;
+            logger.LogWarning(ex, "Database connection failed. Retrying in 3 seconds...");
+            await Task.Delay(3000);
+            
+            if (retryCount == 10)
+            {
+                logger.LogCritical(ex, "Could not connect to database after 10 attempts. Exiting.");
+                throw; // Crash so Docker restarts it, but logs will show why
+            }
+        }
     }
 }
 
