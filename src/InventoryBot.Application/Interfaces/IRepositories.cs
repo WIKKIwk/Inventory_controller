@@ -16,6 +16,7 @@ public interface IWarehouseRepository
 {
     Task<List<Warehouse>> GetAllAsync();
     Task<Warehouse?> GetByIdAsync(int id);
+    Task<Warehouse?> GetByNameAsync(string name);
     Task AddAsync(Warehouse warehouse);
 }
 
