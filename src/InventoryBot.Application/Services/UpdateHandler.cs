@@ -127,7 +127,7 @@ public class UpdateHandler
 
         if (text == "/start")
         {
-            try { await _botClient.DeleteMessageAsync(chatId, message.MessageId, cancellationToken: ct); } catch {}
+            try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
             
             if (user.Role == UserRole.User)
             {
@@ -184,7 +184,6 @@ public class UpdateHandler
              return;
         }
 
-        var lang = user.LanguageCode;
         {
             // Check if Password is Set (Global)
             var password = await _configRepository.GetValueAsync("AdminPassword");
