@@ -14,20 +14,22 @@ public class UpdateHandler
     private readonly ITelegramBotClient _botClient;
     private readonly IUserRepository _userRepository;
     private readonly IAppConfigRepository _configRepository;
+    private readonly LocalizationService _loc;
     private readonly ILogger<UpdateHandler> _logger;
 
-    // Simple in-memory state management. For production use Distributed Cache (Redis)
     private static readonly Dictionary<long, string> _userStates = new(); 
 
     public UpdateHandler(
         ITelegramBotClient botClient,
         IUserRepository userRepository,
         IAppConfigRepository configRepository,
+        LocalizationService loc,
         ILogger<UpdateHandler> logger)
     {
         _botClient = botClient;
         _userRepository = userRepository;
         _configRepository = configRepository;
+        _loc = loc;
         _logger = logger;
     }
 
@@ -65,10 +67,29 @@ public class UpdateHandler
                 Username = message.Chat.Username,
                 FullName = $"{message.Chat.FirstName} {message.Chat.LastName}".Trim(),
                 Role = UserRole.User,
-                Status = UserStatus.Pending
+                Status = UserStatus.Pending,
+                LanguageCode = null // Not set yet
             };
             await _userRepository.AddAsync(user);
         }
+
+        // Language Selection Flow
+        if (string.IsNullOrEmpty(user.LanguageCode))
+        {
+             var langButtons = new InlineKeyboardMarkup(new[]
+             {
+                 new [] 
+                 { 
+                     InlineKeyboardButton.WithCallbackData("O'zbek 🇺🇿", "lang_uz"),
+                     InlineKeyboardButton.WithCallbackData("Русский 🇷🇺", "lang_ru"),
+                     InlineKeyboardButton.WithCallbackData("English 🇺🇸", "lang_en")
+                 }
+             });
+             await _botClient.SendMessage(chatId, "Welcome! Please select your language / Iltimos tilni tanlang / Пожалуйста, выберите язык:", replyMarkup: langButtons, cancellationToken: ct);
+             return;
+        }
+
+        var lang = user.LanguageCode;
 
         // State Handling
         if (_userStates.TryGetValue(chatId, out var state))
@@ -80,14 +101,14 @@ public class UpdateHandler
                 user.Status = UserStatus.Active;
                 await _userRepository.UpdateAsync(user);
                 _userStates.Remove(chatId);
-                await _botClient.SendMessage(chatId, "Password set successfully. You are now the Main Admin. Type /admin to access the panel.", cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
                 return;
             }
             else if (state == "CHANGE_PASSWORD")
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
                 _userStates.Remove(chatId);
-                 await _botClient.SendMessage(chatId, "Password changed successfully.", cancellationToken: ct);
+                 await _botClient.SendMessage(chatId, _loc.Get("PassChanged", lang), cancellationToken: ct);
                 return;
             }
         }
@@ -96,11 +117,11 @@ public class UpdateHandler
         {
             if (user.Role == UserRole.User)
             {
-                await _botClient.SendMessage(chatId, "Welcome! Please wait for an admin to assign you a role.", cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", lang), cancellationToken: ct);
             }
             else
             {
-               await _botClient.SendMessage(chatId, $"Welcome back, {user.Role}. Type /admin for panel.", cancellationToken: ct);
+               await _botClient.SendMessage(chatId, _loc.Get("WelcomeBack", lang, user.Role), cancellationToken: ct);
             }
             return;
         }
@@ -114,18 +135,18 @@ public class UpdateHandler
             {
                 // First time setup
                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, "System not initialized. Please enter a new Admin Password:", cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
                 return;
             }
 
             // Check Access
             if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
             {
-                await ShowAdminPanel(chatId, ct);
+                await ShowAdminPanel(chatId, user.LanguageCode, ct);
             }
             else
             {
-                await _botClient.SendMessage(chatId, "You do not have permission to access the Admin Panel.", cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
             }
         }
     }
@@ -136,7 +157,38 @@ public class UpdateHandler
         var data = query.Data!;
         var user = await _userRepository.GetByChatIdAsync(chatId);
 
-        if (user == null || (user.Role != UserRole.Admin && user.Role != UserRole.Deputy))
+        if (user == null) return;
+
+        // Language Callback
+        if (data.StartsWith("lang_"))
+        {
+            var selectedLang = data.Split('_')[1]; // uz, ru, en
+            user.LanguageCode = selectedLang;
+            await _userRepository.UpdateAsync(user);
+            await _botClient.SendMessage(chatId, _loc.Get("LanguageSelected", selectedLang), cancellationToken: ct);
+            
+            // Continue flow
+            // If admin password is not set, prompt it just in case he is the first user
+            var pass = await _configRepository.GetValueAsync("AdminPassword");
+            if (string.IsNullOrEmpty(pass))
+            {
+                 await _botClient.SendMessage(chatId, "Type /admin to set up the system password.", cancellationToken: ct);
+            }
+            else
+            {
+                 // Default message
+                 if (user.Role == UserRole.User)
+                    await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
+            }
+
+            await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
+            return;
+        }
+
+        // Ensure user has language set before proceeding with other actions (though rare here)
+        var lang = user.LanguageCode ?? "uz"; 
+
+        if (user.Role != UserRole.Admin && user.Role != UserRole.Deputy)
         {
             await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized", cancellationToken: ct);
             return;
@@ -147,7 +199,7 @@ public class UpdateHandler
             var pendingUsers = await _userRepository.GetPendingUsersAsync();
             if (pendingUsers.Count == 0)
             {
-                 await _botClient.SendMessage(chatId, "No pending users found.", cancellationToken: ct);
+                 await _botClient.SendMessage(chatId, _loc.Get("NoPending", lang), cancellationToken: ct);
                  return;
             }
             
@@ -156,36 +208,27 @@ public class UpdateHandler
                 InlineKeyboardButton.WithCallbackData($"{u.FullName} (@{u.Username})", $"user_select_{u.ChatId}") 
             }).ToList();
 
-            await _botClient.SendMessage(chatId, "Select a user to manage (Pending Users):", 
+            await _botClient.SendMessage(chatId, _loc.Get("SelectUser", lang), 
                 replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
         else if (data.StartsWith("user_select_"))
         {
             var targetId = long.Parse(data.Substring("user_select_".Length));
             // Show Actions for this user
-            var buttons = new []
-            {
-                new [] { InlineKeyboardButton.WithCallbackData("Make Deputy (O'rinbosar)", $"set_role_{targetId}_deputy") },
-                new [] { InlineKeyboardButton.WithCallbackData("Make Storekeeper (Omborchi)", $"set_role_{targetId}_storekeeper") },
-                 new [] { InlineKeyboardButton.WithCallbackData("Make Admin", $"set_role_{targetId}_admin") } // Only Admin?
-            };
+            var buttons = new List<InlineKeyboardButton[]>();
             
-            // Check if current user is Admin (Deputy can't make new Deputies? Prompt says "O'rinbosarlarni faqat admin belgilay oladi")
-            // So if I am Deputy, I can't appoint Deputy.
-            if (user.Role == UserRole.Deputy)
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Storekeeper", lang), $"set_role_{targetId}_storekeeper") });
+
+            if (user.Role == UserRole.Admin)
             {
-                // Filter out restricted roles
-                 buttons = new []
-                {
-                    new [] { InlineKeyboardButton.WithCallbackData("Make Storekeeper (Omborchi)", $"set_role_{targetId}_storekeeper") }
-                };
+                 buttons.Insert(0, new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Deputy", lang), $"set_role_{targetId}_deputy") });
+                 buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Admin", lang), $"set_role_{targetId}_admin") });
             }
 
-            await _botClient.SendMessage(chatId, $"Select role for User ID {targetId}:", replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+            await _botClient.SendMessage(chatId, _loc.Get("SelectRole", lang, targetId), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
         else if (data.StartsWith("set_role_"))
         {
-            // set_role_{id}_{role}
             var parts = data.Split('_');
             var targetId = long.Parse(parts[2]);
             var roleName = parts[3];
@@ -202,29 +245,30 @@ public class UpdateHandler
                 targetUser.Status = UserStatus.Active;
                 await _userRepository.UpdateAsync(targetUser);
 
-                await _botClient.SendMessage(chatId, $"User role updated to {roleName}.", cancellationToken: ct);
+                await _botClient.SendMessage(chatId, _loc.Get("RoleUpdated", lang, roleName), cancellationToken: ct);
                 try {
-                    await _botClient.SendMessage(targetId, $"Your role has been updated to: {roleName}", cancellationToken: ct);
-                } catch {} // Ignore blocking
+                    var targetLang = targetUser.LanguageCode ?? "uz";
+                    await _botClient.SendMessage(targetId, _loc.Get("YourRoleUpdated", targetLang, roleName), cancellationToken: ct);
+                } catch {} 
             }
         }
         else if (data == "admin_change_pass")
         {
              _userStates[chatId] = "CHANGE_PASSWORD";
-             await _botClient.SendMessage(chatId, "Enter new password:", cancellationToken: ct);
+             await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
         }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
     }
 
-    private async Task ShowAdminPanel(long chatId, CancellationToken ct)
+    private async Task ShowAdminPanel(long chatId, string lang, CancellationToken ct)
     {
         var pendingCount = (await _userRepository.GetPendingUsersAsync()).Count;
 
         var buttons = new List<InlineKeyboardButton[]>
         {
-            new [] { InlineKeyboardButton.WithCallbackData($"Bildirishnomalar (Waiting: {pendingCount})", "admin_show_waiting") },
-            new [] { InlineKeyboardButton.WithCallbackData("Parolni almashtirish", "admin_change_pass") }
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
         };
 
         await _botClient.SendMessage(chatId, "Admin Panel:", replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
