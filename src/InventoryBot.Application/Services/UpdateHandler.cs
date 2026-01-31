@@ -156,6 +156,23 @@ public class UpdateHandler
                 // Compact Mode: Delete user input
                 try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
+                var currentPass = await _configRepository.GetValueAsync("AdminPassword");
+                if (text == currentPass)
+                {
+                     // Error: New password is same as old
+                     if (_adminPanelMessageIds.TryGetValue(chatId, out var errorMsgId))
+                     {
+                         var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel"));
+                         await _botClient.EditMessageText(chatId, errorMsgId, _loc.Get("NewPasswordSameAsOld", lang), replyMarkup: cancelBtn, cancellationToken: ct);
+                     }
+                     else
+                     {
+                         await ShowAdminPanel(chatId, lang, ct, statusMessage: _loc.Get("NewPasswordSameAsOld", lang));
+                     }
+                     // State remains CHANGE_PASSWORD so they can try again
+                     return;
+                }
+
                 await _configRepository.SetValueAsync("AdminPassword", text);
                 _userStates.Remove(chatId);
                  
