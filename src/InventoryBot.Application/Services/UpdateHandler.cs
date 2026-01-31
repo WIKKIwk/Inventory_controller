@@ -24,6 +24,7 @@ public class UpdateHandler
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
     private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
     private static readonly Dictionary<long, string> _tempProductData = new(); // ChatId -> ProductName
+    private static readonly HashSet<long> _authenticatedAdmins = new(); // Session-based admins
 
     public UpdateHandler(
         ITelegramBotClient botClient,
@@ -109,11 +110,19 @@ public class UpdateHandler
             if (state == "SET_ADMIN_PASSWORD")
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
-                user.Role = UserRole.Admin;
-                user.Status = UserStatus.Active;
-                await _userRepository.UpdateAsync(user);
+                
+                // Add to session
+                _authenticatedAdmins.Add(chatId);
+                
+                // If this is the FIRST admin ever, maybe we still want to save them as Admin? 
+                // The user asked NOT to link to ID. So we just authenticate session.
+                // However, for the very first setup, it's usually safer to have one permanent admin.
+                // BUT user said "don't link to admin id at all". So we obey. 
+                // We just rely on password.
+                
                 _userStates.Remove(chatId);
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
+                await ShowAdminPanel(chatId, lang, ct); // Show panel immediately
                 return;
             }
             else if (state == "ENTER_ADMIN_PASSWORD")
@@ -125,6 +134,7 @@ public class UpdateHandler
                 if (text == adminPass)
                 {
                     _userStates.Remove(chatId);
+                    _authenticatedAdmins.Add(chatId); // Authenticate session
                     await ShowAdminPanel(chatId, lang, ct);
                 }
                 else
@@ -319,7 +329,7 @@ public class UpdateHandler
             await _botClient.SendMessage(chatId, $"Hello {user.FullName}! Language: {user.LanguageCode}", cancellationToken: ct);
             return;
         }
-        else if (text == "/admin")
+         if (text == "/admin")
         {
             try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
@@ -332,21 +342,22 @@ public class UpdateHandler
                 return;
             }
 
-            // Pending is a STATUS, not a ROLE in Enums. 
-            // Role default is User (0).
-            if (user.Role == UserRole.User)
-            {
-                _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
-            }
-            else if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
+            // Session Check: If authenticated session exists, allow access.
+            if (_authenticatedAdmins.Contains(chatId))
             {
                await ShowAdminPanel(chatId, lang, ct);
             }
             else
             {
-                await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
+                // Not authenticated for this session, ask for password.
+                _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
+                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
             }
+            return;
+        }
+        else if (text == "/sklad")
+        {
+            // ...
         }
     }
 
@@ -379,14 +390,7 @@ public class UpdateHandler
             else
             {
                  // Normal User Flow
-                 if (user.Role == UserRole.User)
-                 {
-                    await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
-                 }
-                 else
-                 {
-                     await ShowAdminPanel(chatId, selectedLang, ct);
-                 }
+                 await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
             }
 
             await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
@@ -395,10 +399,29 @@ public class UpdateHandler
 
         var lang = user.LanguageCode ?? "uz"; 
 
-        if (user.Role != UserRole.Admin && user.Role != UserRole.Deputy)
+        // Admin Access Check for Callbacks
+        // Allow if in session OR if user is Deputy (Deputy role is still persistent maybe? 
+        // User requested Admin ID not be linked. Deputy/Storekeeper roles likely remain persistent for staff management.
+        // Assuming we only change Admin access behavior.)
+        bool isSessionAdmin = _authenticatedAdmins.Contains(chatId);
+        bool isDeputy = user.Role == UserRole.Deputy;
+
+        // Special case: Sklad callbacks are for Storekeepers
+        if (data == "sklad_add_product" || data.StartsWith("set_unit_"))
         {
-            await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized", cancellationToken: ct);
-            return;
+             // These are handled below indiscriminately of admin session, but rely on role.
+             // We can let them pass through.
+        }
+        else 
+        {
+             // For all other callbacks (admin_*), require authentication
+             if (!isSessionAdmin && !isDeputy && (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_")))
+             {
+                 await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized / Session Expired", cancellationToken: ct);
+                 // Optionally prompt for password again? 
+                 // For now just deny. User can run /admin again.
+                 return;
+             }
         }
 
         if (data == "admin_show_waiting")
