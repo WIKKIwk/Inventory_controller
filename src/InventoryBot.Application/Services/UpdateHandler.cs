@@ -130,6 +130,7 @@ public class UpdateHandler
         {
             // Check if Password is Set (Global)
             var password = await _configRepository.GetValueAsync("AdminPassword");
+            _logger.LogInformation("Admin Password Check: {Result}", string.IsNullOrEmpty(password) ? "Not Set" : "Found");
             
             if (string.IsNullOrEmpty(password))
             {
