@@ -112,6 +112,23 @@ public class UpdateHandler
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
                 return;
             }
+            else if (state == "WAIT_OLD_PASSWORD")
+            {
+                // Verify old password
+                var currentPass = await _configRepository.GetValueAsync("AdminPassword");
+                if (text == currentPass)
+                {
+                    _userStates[chatId] = "CHANGE_PASSWORD";
+                    await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
+                }
+                else
+                {
+                    _userStates.Remove(chatId);
+                    await _botClient.SendMessage(chatId, _loc.Get("OldPasswordIncorrect", lang), cancellationToken: ct);
+                    await ShowAdminPanel(chatId, lang, ct);
+                }
+                return;
+            }
             else if (state == "CHANGE_PASSWORD")
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
@@ -439,10 +456,14 @@ public class UpdateHandler
         }
         else if (data == "admin_change_pass")
         {
-             _userStates[chatId] = "CHANGE_PASSWORD";
-             await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
-             // Password change usually requires text input so we can't edit in-place easily 
-             // unless we make password change inline too, but let's focus on Warehouse first.
+             _userStates[chatId] = "WAIT_OLD_PASSWORD";
+             await _botClient.SendMessage(chatId, _loc.Get("EnterOldPassword", lang), cancellationToken: ct);
+        }
+        else if (data == "admin_close")
+        {
+            _userStates.Remove(chatId);
+            _adminPanelMessageIds.Remove(chatId);
+            try { await _botClient.DeleteMessage(chatId, query.Message.MessageId, cancellationToken: ct); } catch {}
         }
         else if (data == "admin_add_warehouse")
         {
@@ -580,7 +601,8 @@ public class UpdateHandler
         {
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Warehouses", lang), "admin_warehouses_menu"), InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Customers", lang), "admin_customers_menu") },
-            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Close", lang), "admin_close") }
         };
 
         var text = statusMessage != null ? $"{statusMessage}\n\nAdmin Panel:" : "Admin Panel:";
