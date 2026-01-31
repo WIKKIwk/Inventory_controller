@@ -114,26 +114,59 @@ public class UpdateHandler
             }
             else if (state == "WAIT_OLD_PASSWORD")
             {
+                // Compact Mode: Delete user input
+                try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
                 // Verify old password
                 var currentPass = await _configRepository.GetValueAsync("AdminPassword");
                 if (text == currentPass)
                 {
                     _userStates[chatId] = "CHANGE_PASSWORD";
-                    await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
+                    
+                    // Edit Admin Panel to ask for new password
+                    if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                    {
+                         var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel"));
+                         await _botClient.EditMessageText(chatId, msgId, _loc.Get("ChangePass", lang), replyMarkup: cancelBtn, cancellationToken: ct);
+                    }
+                    else
+                    {
+                         await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
+                    }
                 }
                 else
                 {
                     _userStates.Remove(chatId);
-                    await _botClient.SendMessage(chatId, _loc.Get("OldPasswordIncorrect", lang), cancellationToken: ct);
-                    await ShowAdminPanel(chatId, lang, ct);
+                    
+                    // Show error in Admin Panel
+                    if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                    {
+                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("OldPasswordIncorrect", lang));
+                        // Do not remove msgId, as we just updated it, it's still the Admin Panel
+                    }
+                    else
+                    {
+                        await ShowAdminPanel(chatId, lang, ct, statusMessage: _loc.Get("OldPasswordIncorrect", lang));
+                    }
                 }
                 return;
             }
             else if (state == "CHANGE_PASSWORD")
             {
+                // Compact Mode: Delete user input
+                try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
                 await _configRepository.SetValueAsync("AdminPassword", text);
                 _userStates.Remove(chatId);
-                 await _botClient.SendMessage(chatId, _loc.Get("PassChanged", lang), cancellationToken: ct);
+                 
+                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                {
+                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("PassChanged", lang));
+                }
+                else
+                {
+                    await ShowAdminPanel(chatId, lang, ct, statusMessage: _loc.Get("PassChanged", lang));
+                }
                 return;
             }
             else if (state == "ADD_WAREHOUSE")
@@ -457,7 +490,10 @@ public class UpdateHandler
         else if (data == "admin_change_pass")
         {
              _userStates[chatId] = "WAIT_OLD_PASSWORD";
-             await _botClient.SendMessage(chatId, _loc.Get("EnterOldPassword", lang), cancellationToken: ct);
+             _adminPanelMessageIds[chatId] = query.Message.MessageId;
+
+             var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel"));
+             await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterOldPassword", lang), replyMarkup: cancelBtn, cancellationToken: ct);
         }
         else if (data == "admin_close")
         {
