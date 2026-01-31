@@ -110,12 +110,7 @@ public class UpdateHandler
             if (state == "SET_ADMIN_PASSWORD")
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
-                
-                // Save user as Admin in DB permanently
-                user.Role = UserRole.Admin;
-                user.Status = UserStatus.Active;
-                await _userRepository.UpdateAsync(user);
-                
+                _authenticatedAdmins.Add(chatId);
                 _userStates.Remove(chatId);
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
                 await ShowAdminPanel(chatId, lang, ct);
@@ -123,17 +118,12 @@ public class UpdateHandler
             }
             else if (state == "ENTER_ADMIN_PASSWORD")
             {
-                // Compact Mode: Delete user input
                 try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
                 var adminPass = await _configRepository.GetValueAsync("AdminPassword");
                 if (text == adminPass)
                 {
-                    // Save user as Admin in DB permanently
-                    user.Role = UserRole.Admin;
-                    user.Status = UserStatus.Active;
-                    await _userRepository.UpdateAsync(user);
-                    
+                    _authenticatedAdmins.Add(chatId);
                     _userStates.Remove(chatId);
                     await ShowAdminPanel(chatId, lang, ct);
                 }
@@ -335,25 +325,21 @@ public class UpdateHandler
 
             var password = await _configRepository.GetValueAsync("AdminPassword");
             
-            _logger.LogInformation("Admin password check: IsNull={IsNull}, IsEmpty={IsEmpty}, Value={Value}", 
-                password == null, string.IsNullOrEmpty(password), password ?? "NULL");
-            
             if (string.IsNullOrEmpty(password))
             {
-                _logger.LogWarning("Password is empty, switching to SET_ADMIN_PASSWORD state");
                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
                 return;
             }
 
-            // Check user role from DB
-            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
+            // Check session
+            if (_authenticatedAdmins.Contains(chatId))
             {
                await ShowAdminPanel(chatId, lang, ct);
             }
             else
             {
-                // Not admin, ask for password
+                // Always ask for password
                 _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
             }
@@ -403,20 +389,19 @@ public class UpdateHandler
 
         var lang = user.LanguageCode ?? "uz"; 
 
-        // Check admin/deputy role from DB for admin actions
-        bool isAdmin = user.Role == UserRole.Admin || user.Role == UserRole.Deputy;
+        // Check session for admin actions
+        bool isSessionAdmin = _authenticatedAdmins.Contains(chatId);
+        bool isDeputy = user.Role == UserRole.Deputy;
 
-        // Special case: Sklad callbacks are for Storekeepers
         if (data == "sklad_add_product" || data.StartsWith("set_unit_"))
         {
-             // These are handled below for storekeeper role
+             // Storekeeper actions
         }
         else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_"))
         {
-             // For admin callbacks, require admin role
-             if (!isAdmin)
+             if (!isSessionAdmin && !isDeputy)
              {
-                 await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized", cancellationToken: ct);
+                 await _botClient.AnswerCallbackQuery(query.Id, "Session expired. Send /admin", cancellationToken: ct);
                  return;
              }
         }
