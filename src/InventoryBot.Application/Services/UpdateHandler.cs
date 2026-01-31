@@ -14,21 +14,25 @@ public class UpdateHandler
     private readonly ITelegramBotClient _botClient;
     private readonly IUserRepository _userRepository;
     private readonly IAppConfigRepository _configRepository;
+    private readonly IWarehouseRepository _warehouseRepository;
     private readonly LocalizationService _loc;
     private readonly ILogger<UpdateHandler> _logger;
 
-    private static readonly Dictionary<long, string> _userStates = new(); 
+    private static readonly Dictionary<long, string> _userStates = new(); // State
+    private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
 
     public UpdateHandler(
         ITelegramBotClient botClient,
         IUserRepository userRepository,
         IAppConfigRepository configRepository,
+        IWarehouseRepository warehouseRepository,
         LocalizationService loc,
         ILogger<UpdateHandler> logger)
     {
         _botClient = botClient;
         _userRepository = userRepository;
         _configRepository = configRepository;
+        _warehouseRepository = warehouseRepository;
         _loc = loc;
         _logger = logger;
     }
@@ -68,7 +72,7 @@ public class UpdateHandler
                 FullName = $"{message.Chat.FirstName} {message.Chat.LastName}".Trim(),
                 Role = UserRole.User,
                 Status = UserStatus.Pending,
-                LanguageCode = null // Not set yet
+                LanguageCode = null 
             };
             await _userRepository.AddAsync(user);
         }
@@ -111,6 +115,14 @@ public class UpdateHandler
                  await _botClient.SendMessage(chatId, _loc.Get("PassChanged", lang), cancellationToken: ct);
                 return;
             }
+            else if (state == "ADD_WAREHOUSE")
+            {
+                var warehouse = new Warehouse { Name = text };
+                await _warehouseRepository.AddAsync(warehouse);
+                _userStates.Remove(chatId);
+                await _botClient.SendMessage(chatId, _loc.Get("WarehouseAdded", lang, text), cancellationToken: ct);
+                return;
+            }
         }
 
         if (text == "/start")
@@ -143,7 +155,7 @@ public class UpdateHandler
             // Check Access
             if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
             {
-                await ShowAdminPanel(chatId, user.LanguageCode, ct);
+                await ShowAdminPanel(chatId, user.LanguageCode!, ct);
             }
             else
             {
@@ -168,8 +180,6 @@ public class UpdateHandler
             await _userRepository.UpdateAsync(user);
             await _botClient.SendMessage(chatId, _loc.Get("LanguageSelected", selectedLang), cancellationToken: ct);
             
-            // Continue flow
-            // If admin password is not set, prompt it just in case he is the first user
             var pass = await _configRepository.GetValueAsync("AdminPassword");
             if (string.IsNullOrEmpty(pass))
             {
@@ -177,7 +187,6 @@ public class UpdateHandler
             }
             else
             {
-                 // Default message
                  if (user.Role == UserRole.User)
                     await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", selectedLang), cancellationToken: ct);
             }
@@ -186,7 +195,6 @@ public class UpdateHandler
             return;
         }
 
-        // Ensure user has language set before proceeding with other actions (though rare here)
         var lang = user.LanguageCode ?? "uz"; 
 
         if (user.Role != UserRole.Admin && user.Role != UserRole.Deputy)
@@ -230,27 +238,42 @@ public class UpdateHandler
         }
         else if (data.StartsWith("set_role_"))
         {
+            // set_role_{id}_{role}
             var parts = data.Split('_');
             var targetId = long.Parse(parts[2]);
             var roleName = parts[3];
 
-            var targetUser = await _userRepository.GetByChatIdAsync(targetId);
-            if (targetUser != null)
+            if (roleName == "storekeeper")
             {
-                switch (roleName)
+                // Assign to Warehouse Flow
+                var warehouses = await _warehouseRepository.GetAllAsync();
+                if (warehouses.Count == 0)
                 {
-                    case "deputy": targetUser.Role = UserRole.Deputy; break;
-                    case "storekeeper": targetUser.Role = UserRole.Storekeeper; break;
-                    case "admin": targetUser.Role = UserRole.Admin; break;
+                     await _botClient.SendMessage(chatId, _loc.Get("NoWarehouses", lang), cancellationToken: ct);
+                     return;
                 }
-                targetUser.Status = UserStatus.Active;
-                await _userRepository.UpdateAsync(targetUser);
 
-                await _botClient.SendMessage(chatId, _loc.Get("RoleUpdated", lang, roleName), cancellationToken: ct);
-                try {
-                    var targetLang = targetUser.LanguageCode ?? "uz";
-                    await _botClient.SendMessage(targetId, _loc.Get("YourRoleUpdated", targetLang, roleName), cancellationToken: ct);
-                } catch {} 
+                _pendingUserRoleAssignment[chatId] = targetId; // Remember who we are assigning
+                
+                var buttons = warehouses.Select(w => new [] 
+                { 
+                     InlineKeyboardButton.WithCallbackData(w.Name, $"assign_wh_{w.Id}") 
+                }).ToList();
+                
+                 await _botClient.SendMessage(chatId, _loc.Get("SelectWarehouse", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+                 return;
+            }
+
+            // Direct assignment for Admin/Deputy
+            await AssignRole(chatId, targetId, roleName, null, lang, ct);
+        }
+        else if (data.StartsWith("assign_wh_"))
+        {
+            var warehouseId = int.Parse(data.Split('_')[2]);
+            if (_pendingUserRoleAssignment.TryGetValue(chatId, out var targetId))
+            {
+                await AssignRole(chatId, targetId, "storekeeper", warehouseId, lang, ct);
+                _pendingUserRoleAssignment.Remove(chatId);
             }
         }
         else if (data == "admin_change_pass")
@@ -258,8 +281,48 @@ public class UpdateHandler
              _userStates[chatId] = "CHANGE_PASSWORD";
              await _botClient.SendMessage(chatId, _loc.Get("ChangePass", lang), cancellationToken: ct);
         }
+        else if (data == "admin_add_warehouse")
+        {
+            if (user.Role != UserRole.Admin) // Only Admin can add warehouse? Assuming yes for now.
+            {
+                 await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
+                 return;
+            }
+            _userStates[chatId] = "ADD_WAREHOUSE";
+            await _botClient.SendMessage(chatId, _loc.Get("EnterWarehouseName", lang), cancellationToken: ct);
+        }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
+    }
+    
+    private async Task AssignRole(long adminChatId, long targetUserId, string roleName, int? warehouseId, string lang, CancellationToken ct)
+    {
+        var targetUser = await _userRepository.GetByChatIdAsync(targetUserId);
+        if (targetUser != null)
+        {
+            switch (roleName)
+            {
+                case "deputy": targetUser.Role = UserRole.Deputy; break;
+                case "storekeeper": targetUser.Role = UserRole.Storekeeper; break;
+                case "admin": targetUser.Role = UserRole.Admin; break;
+            }
+            targetUser.Status = UserStatus.Active;
+            targetUser.WarehouseId = warehouseId;
+            
+            await _userRepository.UpdateAsync(targetUser);
+
+            await _botClient.SendMessage(adminChatId, _loc.Get("RoleUpdated", lang, roleName), cancellationToken: ct);
+            if (warehouseId.HasValue)
+            {
+                 var wh = await _warehouseRepository.GetByIdAsync(warehouseId.Value);
+                 await _botClient.SendMessage(adminChatId, _loc.Get("UserAssignedToWarehouse", lang, wh?.Name ?? "?"), cancellationToken: ct);
+            }
+
+            try {
+                var targetLang = targetUser.LanguageCode ?? "uz";
+                await _botClient.SendMessage(targetUserId, _loc.Get("YourRoleUpdated", targetLang, roleName), cancellationToken: ct);
+            } catch {} 
+        }
     }
 
     private async Task ShowAdminPanel(long chatId, string lang, CancellationToken ct)
@@ -269,6 +332,7 @@ public class UpdateHandler
         var buttons = new List<InlineKeyboardButton[]>
         {
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddWarehouse", lang), "admin_add_warehouse") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") }
         };
 

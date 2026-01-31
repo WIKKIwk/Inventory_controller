@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Services
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IAppConfigRepository, AppConfigRepository>();
+builder.Services.AddScoped<IWarehouseRepository, WarehouseRepository>();
 builder.Services.AddScoped<LocalizationService>();
 builder.Services.AddScoped<UpdateHandler>();
 
