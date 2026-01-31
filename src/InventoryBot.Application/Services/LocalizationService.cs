@@ -51,7 +51,21 @@ public class LocalizationService
             ["EnterOldPassword"] = "🔒 Iltimos, avval eski parolni kiriting:",
             ["OldPasswordIncorrect"] = "❌ Eski parol noto'g'ri!",
             ["NewPasswordSameAsOld"] = "❌ Yangi parol eski parol bilan bir xil bo'lishi mumkin emas!",
-            ["Btn_Close"] = "❌ Yopish"
+            ["NewPasswordSameAsOld"] = "❌ Yangi parol eski parol bilan bir xil bo'lishi mumkin emas!",
+            ["Btn_Close"] = "❌ Yopish",
+            // Storekeeper
+            ["WarehouseTitle"] = "🏠 Ombor: {0}",
+            ["Btn_AddProduct"] = "➕ Mahsulot qo'shish",
+            ["EnterProductName"] = "📝 Mahsulot nomini kiriting:",
+            ["SelectUnit"] = "⚖️ O'lchov birligini tanlang:",
+            ["Unit_Kg"] = "Kg",
+            ["Unit_Ton"] = "Tonna",
+            ["Unit_Meter"] = "Metr",
+            ["Unit_Piece"] = "Dona",
+            ["Unit_Liter"] = "Litr",
+            ["ProductSaved"] = "✅ Mahsulot saqlandi: {0} ({1})",
+            ["NotStorekeeper"] = "⛔️ Siz omborchi emassiz.",
+            ["NoWarehouseAssigned"] = "⛔️ Sizga ombor biriktirilmagan."
         },
         ["ru"] = new()
         {
@@ -100,7 +114,21 @@ public class LocalizationService
             ["EnterOldPassword"] = "🔒 Пожалуйста, введите старый пароль:",
             ["OldPasswordIncorrect"] = "❌ Старый пароль неверен!",
             ["NewPasswordSameAsOld"] = "❌ Новый пароль не может совпадать со старым!",
-            ["Btn_Close"] = "❌ Закрыть"
+            ["NewPasswordSameAsOld"] = "❌ Новый пароль не может совпадать со старым!",
+            ["Btn_Close"] = "❌ Закрыть",
+            // Storekeeper
+            ["WarehouseTitle"] = "🏠 Склад: {0}",
+            ["Btn_AddProduct"] = "➕ Добавить продукт",
+            ["EnterProductName"] = "📝 Введите название продукта:",
+            ["SelectUnit"] = "⚖️ Выберите единицу измерения:",
+            ["Unit_Kg"] = "Кг",
+            ["Unit_Ton"] = "Тонна",
+            ["Unit_Meter"] = "Метр",
+            ["Unit_Piece"] = "Шт",
+            ["Unit_Liter"] = "Литр",
+            ["ProductSaved"] = "✅ Продукт сохранен: {0} ({1})",
+            ["NotStorekeeper"] = "⛔️ Вы не кладовщик.",
+            ["NoWarehouseAssigned"] = "⛔️ Вам не назначен склад."
         },
         ["en"] = new()
         {
@@ -149,7 +177,21 @@ public class LocalizationService
             ["EnterOldPassword"] = "🔒 Please enter your old password first:",
             ["OldPasswordIncorrect"] = "❌ Old password incorrect!",
             ["NewPasswordSameAsOld"] = "❌ New password cannot be the same as the old one!",
-            ["Btn_Close"] = "❌ Close"
+            ["NewPasswordSameAsOld"] = "❌ New password cannot be the same as the old one!",
+            ["Btn_Close"] = "❌ Close",
+            // Storekeeper
+            ["WarehouseTitle"] = "🏠 Warehouse: {0}",
+            ["Btn_AddProduct"] = "➕ Add Product",
+            ["EnterProductName"] = "📝 Enter product name:",
+            ["SelectUnit"] = "⚖️ Select unit of measurement:",
+            ["Unit_Kg"] = "Kg",
+            ["Unit_Ton"] = "Ton",
+            ["Unit_Meter"] = "Meter",
+            ["Unit_Piece"] = "Pc",
+            ["Unit_Liter"] = "Liter",
+            ["ProductSaved"] = "✅ Product saved: {0} ({1})",
+            ["NotStorekeeper"] = "⛔️ You are not a storekeeper.",
+            ["NoWarehouseAssigned"] = "⛔️ No warehouse assigned to you."
         }
     };
 

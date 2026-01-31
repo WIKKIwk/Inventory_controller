@@ -16,12 +16,14 @@ public class UpdateHandler
     private readonly IAppConfigRepository _configRepository;
     private readonly IWarehouseRepository _warehouseRepository;
     private readonly ICustomerRepository _customerRepository;
+    private readonly IProductRepository _productRepository;
     private readonly LocalizationService _loc;
     private readonly ILogger<UpdateHandler> _logger;
 
     private static readonly Dictionary<long, string> _userStates = new(); // State
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
     private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
+    private static readonly Dictionary<long, string> _tempProductData = new(); // ChatId -> ProductName
 
     public UpdateHandler(
         ITelegramBotClient botClient,
@@ -29,6 +31,7 @@ public class UpdateHandler
         IAppConfigRepository configRepository,
         IWarehouseRepository warehouseRepository,
         ICustomerRepository customerRepository,
+        IProductRepository productRepository,
         LocalizationService loc,
         ILogger<UpdateHandler> logger)
     {
@@ -37,6 +40,7 @@ public class UpdateHandler
         _configRepository = configRepository;
         _warehouseRepository = warehouseRepository;
         _customerRepository = customerRepository;
+        _productRepository = productRepository;
         _loc = loc;
         _logger = logger;
     }
@@ -110,6 +114,24 @@ public class UpdateHandler
                 await _userRepository.UpdateAsync(user);
                 _userStates.Remove(chatId);
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
+                return;
+            }
+            else if (state == "ENTER_ADMIN_PASSWORD")
+            {
+                // Compact Mode: Delete user input
+                try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+
+                var adminPass = await _configRepository.GetValueAsync("AdminPassword");
+                if (text == adminPass)
+                {
+                    _userStates.Remove(chatId);
+                    await ShowAdminPanel(chatId, lang, ct);
+                }
+                else
+                {
+                    await _botClient.SendMessage(chatId, _loc.Get("IncorrectPassword", lang), cancellationToken: ct);
+                    _userStates.Remove(chatId);
+                }
                 return;
             }
             else if (state == "WAIT_OLD_PASSWORD")
@@ -198,13 +220,13 @@ public class UpdateHandler
                     _userStates.Remove(chatId);
                     if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
                     {
-                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("WarehouseDuplicate", lang, text));
-                        _adminPanelMessageIds.Remove(chatId);
+                        var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_warehouses_menu"));
+                        await _botClient.EditMessageText(chatId, msgId, _loc.Get("WarehouseDuplicate", lang, text), replyMarkup: cancelBtn, cancellationToken: ct);
                     }
                     else
                     {
-                        await _botClient.SendMessage(chatId, _loc.Get("WarehouseDuplicate", lang, text), cancellationToken: ct);
-                        await ShowAdminPanel(chatId, lang, ct);
+                        var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_warehouses_menu"));
+                        await _botClient.SendMessage(chatId, _loc.Get("WarehouseDuplicate", lang, text), replyMarkup: cancelBtn, cancellationToken: ct);
                     }
                     return;
                 }
@@ -238,135 +260,78 @@ public class UpdateHandler
                     _userStates.Remove(chatId);
                     if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
                     {
-                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("CustomerDuplicate", lang, text));
-                        _adminPanelMessageIds.Remove(chatId);
+                        var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_customers_menu"));
+                        await _botClient.EditMessageText(chatId, msgId, _loc.Get("WarehouseDuplicate", lang, text), replyMarkup: cancelBtn, cancellationToken: ct);
                     }
                     else
                     {
-                        await _botClient.SendMessage(chatId, _loc.Get("CustomerDuplicate", lang, text), cancellationToken: ct);
-                        await ShowAdminPanel(chatId, lang, ct);
+                        var cancelBtn = new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_customers_menu"));
+                        await _botClient.SendMessage(chatId, _loc.Get("WarehouseDuplicate", lang, text), replyMarkup: cancelBtn, cancellationToken: ct);
                     }
                     return;
                 }
 
-                var customer = new Customer { Name = text };
+                var customer = new Customer { Name = text, CreatedAt = DateTime.UtcNow };
                 await _customerRepository.AddAsync(customer);
+
                 _userStates.Remove(chatId);
-                
-                // Edit Admin Panel Back
-                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId3))
+                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId2))
                 {
-                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId3, statusMessage: _loc.Get("CustomerAdded", lang, text));
-                    _adminPanelMessageIds.Remove(chatId);
+                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId2, statusMessage: _loc.Get("WarehouseSaved", lang, text));
                 }
                 else
                 {
-                    await _botClient.SendMessage(chatId, _loc.Get("CustomerAdded", lang, text), cancellationToken: ct);
-                    await ShowAdminPanel(chatId, lang, ct);
+                    await ShowAdminPanel(chatId, lang, ct, statusMessage: _loc.Get("WarehouseSaved", lang, text));
                 }
                 return;
+            }
+            else if (state == "ADD_PRODUCT_NAME")
+            {
+                 // Compact Mode: Delete user input
+                 try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
+                 
+                 _tempProductData[chatId] = text;
+                 _userStates.Remove(chatId); 
+
+                 // Show Unit Selection Buttons
+                 var unitButtons = new InlineKeyboardMarkup(new[]
+                 {
+                     new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Unit_Kg", lang), "set_unit_0"), InlineKeyboardButton.WithCallbackData(_loc.Get("Unit_Ton", lang), "set_unit_1") },
+                     new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Unit_Meter", lang), "set_unit_2"), InlineKeyboardButton.WithCallbackData(_loc.Get("Unit_Piece", lang), "set_unit_3") },
+                     new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Unit_Liter", lang), "set_unit_4") }
+                 });
+                 
+                 if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                 {
+                     await _botClient.EditMessageText(chatId, msgId, _loc.Get("SelectUnit", lang), replyMarkup: unitButtons, cancellationToken: ct);
+                 }
+                 else
+                 {
+                     var msg = await _botClient.SendMessage(chatId, _loc.Get("SelectUnit", lang), replyMarkup: unitButtons, cancellationToken: ct);
+                     _adminPanelMessageIds[chatId] = msg.MessageId;
+                 }
+                 return;
             }
         }
 
         if (text == "/start")
         {
-            try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
-            
-            if (user.Role == UserRole.User)
-            {
-                 // If password not set, this might be the first user
-                 var pass = await _configRepository.GetValueAsync("AdminPassword");
-                 if (string.IsNullOrEmpty(pass))
-                 {
-                     if (!string.IsNullOrEmpty(user.LanguageCode))
-                     {
-                         _userStates[chatId] = "SET_ADMIN_PASSWORD";
-                         await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", user.LanguageCode), cancellationToken: ct);
-                         return;
-                     }
-                 }
-                 else
-                 {
-                    // Normal user waiting
-                    if (!string.IsNullOrEmpty(user.LanguageCode))
-                    {
-                        await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", user.LanguageCode), cancellationToken: ct);
-                        return;
-                    }
-                 }
-            }
-            else
-            {
-               if (!string.IsNullOrEmpty(user.LanguageCode))
-                    await ShowAdminPanel(chatId, user.LanguageCode, ct); // Show Panel directly on start for admins
-            }
+            await _botClient.SendMessage(chatId, $"Hello {user.FullName}! Language: {user.LanguageCode}", cancellationToken: ct);
             return;
         }
-
-        if (text == "/admin")
+        else if (text == "/admin")
         {
             try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
-            // Check if Password is Set (Global)
             var password = await _configRepository.GetValueAsync("AdminPassword");
             
             if (string.IsNullOrEmpty(password))
             {
-                // First time setup
                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
                 return;
             }
 
-            // Check Access
-            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
-            {
-                await ShowAdminPanel(chatId, user.LanguageCode!, ct);
-            }
-            else
-            {
-                await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
-            }
-            return;
-        }
-
-        // Language Selection Flow (Moved after /start checks to handle 'text' logic first if needed, but actually it was better before)
-        // Let's keep original structure but add delete logic.
-        
-        if (string.IsNullOrEmpty(user.LanguageCode))
-        {
-             var langButtons = new InlineKeyboardMarkup(new[]
-             {
-                 new [] 
-                 { 
-                     InlineKeyboardButton.WithCallbackData("O'zbek 🇺🇿", "lang_uz"),
-                     InlineKeyboardButton.WithCallbackData("Русский 🇷🇺", "lang_ru"),
-                     InlineKeyboardButton.WithCallbackData("English 🇺🇸", "lang_en")
-                 }
-             });
-             await _botClient.SendMessage(chatId, "Welcome! Please select your language / Iltimos tilni tanlang / Пожалуйста, выберите язык:", replyMarkup: langButtons, cancellationToken: ct);
-             return;
-        }
-
-        {
-            // Check if Password is Set (Global)
-            var password = await _configRepository.GetValueAsync("AdminPassword");
-            _logger.LogInformation("Admin Password Check: {Result}", string.IsNullOrEmpty(password) ? "Not Set" : "Found");
-            
-            if (string.IsNullOrEmpty(password))
-            {
-                // First time setup
-                _userStates[chatId] = "SET_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
-                return;
-            }
-
-            // Check Access
-            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
-            {
-                await ShowAdminPanel(chatId, user.LanguageCode!, ct);
-            }
-            else
             {
                 await _botClient.SendMessage(chatId, _loc.Get("AccessDenied", lang), cancellationToken: ct);
             }
@@ -611,6 +576,46 @@ public class UpdateHandler
             };
             
             await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("Title_ManageCustomers", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        }
+        else if (data == "sklad_add_product")
+        {
+             _userStates[chatId] = "ADD_PRODUCT_NAME";
+             await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("EnterProductName", lang), cancellationToken: ct);
+        }
+        else if (data.StartsWith("set_unit_"))
+        {
+             // set_unit_0
+             var unitTypeVal = int.Parse(data.Split('_')[2]);
+             
+             if (!_tempProductData.TryGetValue(chatId, out var productName))
+             {
+                 await _botClient.AnswerCallbackQuery(query.Id, "Session expired", cancellationToken: ct);
+                 return;
+             }
+             
+             if (user.WarehouseId == null) return;
+             
+             var product = new Product 
+             {
+                 Name = productName,
+                 UnitType = (UnitType)unitTypeVal,
+                 WarehouseId = user.WarehouseId.Value,
+                 CreatedAt = DateTime.UtcNow
+             };
+             
+             await _productRepository.AddAsync(product);
+             _tempProductData.Remove(chatId);
+             
+             var unitKey = $"Unit_{((UnitType)unitTypeVal)}";
+             var unitStr = _loc.Get(unitKey, lang);
+             var savedMsg = _loc.Get("ProductSaved", lang, product.Name, unitStr);
+             
+             var buttons = new InlineKeyboardMarkup(new [] 
+             {
+                InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_AddProduct", lang), "sklad_add_product")
+             });
+             
+             await _botClient.EditMessageText(chatId, query.Message.MessageId, savedMsg, replyMarkup: buttons, cancellationToken: ct);
         }
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
