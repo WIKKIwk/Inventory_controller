@@ -28,6 +28,12 @@ public interface ICustomerRepository
     Task AddAsync(Customer customer);
 }
 
+public interface IProductRepository
+{
+    Task AddAsync(Product product);
+    Task<List<Product>> GetAllByWarehouseIdAsync(int warehouseId);
+}
+
 public interface IAppConfigRepository
 {
     Task<string?> GetValueAsync(string key);
