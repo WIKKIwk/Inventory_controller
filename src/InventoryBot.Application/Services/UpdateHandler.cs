@@ -121,14 +121,32 @@ public class UpdateHandler
                 // Compact Mode: Delete user input
                 try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
+                // Check for duplicate warehouse name
+                var existing = await _warehouseRepository.GetByNameAsync(text);
+                if (existing != null)
+                {
+                    _userStates.Remove(chatId);
+                    if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                    {
+                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("WarehouseDuplicate", lang, text));
+                        _adminPanelMessageIds.Remove(chatId);
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(chatId, _loc.Get("WarehouseDuplicate", lang, text), cancellationToken: ct);
+                        await ShowAdminPanel(chatId, lang, ct);
+                    }
+                    return;
+                }
+
                 var warehouse = new Warehouse { Name = text };
                 await _warehouseRepository.AddAsync(warehouse);
                 _userStates.Remove(chatId);
                 
                 // Edit Admin Panel Back
-                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId2))
                 {
-                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId, statusMessage: _loc.Get("WarehouseAdded", lang, text));
+                    await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: msgId2, statusMessage: _loc.Get("WarehouseAdded", lang, text));
                     _adminPanelMessageIds.Remove(chatId);
                 }
                 else
