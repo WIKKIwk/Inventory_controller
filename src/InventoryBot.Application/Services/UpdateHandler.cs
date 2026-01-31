@@ -15,6 +15,7 @@ public class UpdateHandler
     private readonly IUserRepository _userRepository;
     private readonly IAppConfigRepository _configRepository;
     private readonly IWarehouseRepository _warehouseRepository;
+    private readonly ICustomerRepository _customerRepository;
     private readonly LocalizationService _loc;
     private readonly ILogger<UpdateHandler> _logger;
 
@@ -27,6 +28,7 @@ public class UpdateHandler
         IUserRepository userRepository,
         IAppConfigRepository configRepository,
         IWarehouseRepository warehouseRepository,
+        ICustomerRepository customerRepository,
         LocalizationService loc,
         ILogger<UpdateHandler> logger)
     {
@@ -34,6 +36,7 @@ public class UpdateHandler
         _userRepository = userRepository;
         _configRepository = configRepository;
         _warehouseRepository = warehouseRepository;
+        _customerRepository = customerRepository;
         _loc = loc;
         _logger = logger;
     }
