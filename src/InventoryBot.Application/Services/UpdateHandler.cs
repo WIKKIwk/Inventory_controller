@@ -316,7 +316,11 @@ public class UpdateHandler
 
         if (text == "/start")
         {
-            await _botClient.SendMessage(chatId, $"Hello {user.FullName}! Language: {user.LanguageCode}", cancellationToken: ct);
+            var roleKey = $"Role_{user.Role}";
+            var roleText = _loc.Get(roleKey, lang);
+            var yourRoleMsg = _loc.Get("YourRole", lang, roleText);
+            
+            await _botClient.SendMessage(chatId, $"Salom {user.FullName}!\n{yourRoleMsg}", cancellationToken: ct);
             return;
         }
          if (text == "/admin")
@@ -332,17 +336,16 @@ public class UpdateHandler
                 return;
             }
 
-            // Check session
-            if (_authenticatedAdmins.Contains(chatId))
-            {
-               await ShowAdminPanel(chatId, lang, ct);
-            }
-            else
-            {
-                // Always ask for password
-                _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
-            }
+            // Show user their current role
+            var roleKey = $"Role_{user.Role}";
+            var roleText = _loc.Get(roleKey, lang);
+            var yourRoleMsg = _loc.Get("YourRole", lang, roleText);
+            
+            await _botClient.SendMessage(chatId, yourRoleMsg, cancellationToken: ct);
+            
+            // Always ask for password (ignore session)
+            _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
+            await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
             return;
         }
         else if (text == "/sklad")
