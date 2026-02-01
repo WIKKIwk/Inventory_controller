@@ -125,7 +125,16 @@ public class UpdateHandler
                 {
                     _authenticatedAdmins.Add(chatId);
                     _userStates.Remove(chatId);
-                    await ShowAdminPanel(chatId, lang, ct);
+                    
+                    // Edit password prompt to Admin Panel
+                    if (_adminPanelMessageIds.TryGetValue(chatId, out var msgId))
+                    {
+                        await ShowAdminPanelEdit(chatId, msgId, lang, ct);
+                    }
+                    else
+                    {
+                        await ShowAdminPanel(chatId, lang, ct);
+                    }
                 }
                 else
                 {
@@ -345,7 +354,8 @@ public class UpdateHandler
             
             // Always ask for password (ignore session)
             _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
-            await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
+            var passwordMsg = await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
+            _adminPanelMessageIds[chatId] = passwordMsg.MessageId;
             return;
         }
         else if (text == "/sklad")
@@ -693,5 +703,10 @@ public class UpdateHandler
         {
             await _botClient.SendMessage(chatId, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
         }
+    }
+
+    private async Task ShowAdminPanelEdit(long chatId, int messageId, string lang, CancellationToken ct)
+    {
+        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: messageId);
     }
 }
