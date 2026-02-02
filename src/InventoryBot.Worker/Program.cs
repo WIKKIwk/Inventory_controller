@@ -51,6 +51,23 @@ using (var scope = host.Services.CreateScope())
             logger.LogInformation("Attempting to connect to database... ({Attempt}/10)", retryCount + 1);
             await db.Database.EnsureCreatedAsync();
             
+            // Add Roles column (bitmask) for multi-role support and backfill from legacy Role
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE IF EXISTS ""Users""
+                ADD COLUMN IF NOT EXISTS ""Roles"" integer NOT NULL DEFAULT 0;
+            ");
+            await db.Database.ExecuteSqlRawAsync(@"
+                UPDATE ""Users""
+                SET ""Roles"" = CASE ""Role""
+                    WHEN 0 THEN 1  -- User
+                    WHEN 1 THEN 2  -- Admin
+                    WHEN 2 THEN 4  -- Deputy
+                    WHEN 3 THEN 8  -- Storekeeper
+                    ELSE ""Roles""
+                END
+                WHERE ""Roles"" = 0;
+            ");
+
             // Manual Schema Update for Customers table (in case DB already exists)
             await db.Database.ExecuteSqlRawAsync(@"
                 CREATE TABLE IF NOT EXISTS ""Customers"" (

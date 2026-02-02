@@ -8,6 +8,7 @@ public class BotUser
     public string? Username { get; set; }
     public string? FullName { get; set; }
     public UserRole Role { get; set; } = UserRole.User;
+    public UserRoles Roles { get; set; } = UserRoles.None;
     public UserStatus Status { get; set; } = UserStatus.Pending;
     public string? LanguageCode { get; set; }
     public int? WarehouseId { get; set; }
