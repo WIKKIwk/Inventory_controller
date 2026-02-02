@@ -1,3 +1,5 @@
+using System;
+
 namespace InventoryBot.Domain.Enums;
 
 public enum UserRole
@@ -6,6 +8,16 @@ public enum UserRole
     Admin = 1,
     Deputy = 2, // O'rinbosar
     Storekeeper = 3 // Omborchi
+}
+
+[Flags]
+public enum UserRoles
+{
+    None = 0,
+    User = 1,
+    Admin = 2,
+    Deputy = 4,
+    Storekeeper = 8
 }
 
 public enum UserStatus

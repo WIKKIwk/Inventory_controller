@@ -22,6 +22,7 @@ public class UpdateHandler
 
     private static readonly Dictionary<long, string> _userStates = new(); // State
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
+    private static readonly Dictionary<long, string> _roleSelectionReturnCallbacks = new(); // AdminChatId -> Callback
     private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
     private static readonly Dictionary<long, int> _adminPasswordPromptMessageIds = new();
     private static readonly Dictionary<long, string> _tempProductData = new(); // ChatId -> ProductName
@@ -81,6 +82,7 @@ public class UpdateHandler
                 Username = message.Chat.Username,
                 FullName = $"{message.Chat.FirstName} {message.Chat.LastName}".Trim(),
                 Role = UserRole.User,
+                Roles = UserRoles.User,
                 Status = UserStatus.Pending,
                 LanguageCode = null 
             };
@@ -342,11 +344,16 @@ public class UpdateHandler
 
         if (text == "/start")
         {
-            var roleKey = $"Role_{user.Role}";
-            var roleText = _loc.Get(roleKey, lang);
-            var yourRoleMsg = _loc.Get("YourRole", lang, roleText);
-            
-            await _botClient.SendMessage(chatId, $"Salom {user.FullName}!\n{yourRoleMsg}", cancellationToken: ct);
+            var roles = await EnsureRolesAsync(user);
+            if (user.Status == UserStatus.Pending && !HasElevatedRole(roles))
+            {
+                await _botClient.SendMessage(chatId, _loc.Get("WaitAdmin", lang), cancellationToken: ct);
+                return;
+            }
+
+            var displayName = string.IsNullOrWhiteSpace(user.FullName) ? (user.Username ?? "User") : user.FullName;
+            var roleText = BuildRoleListText(roles, lang);
+            await _botClient.SendMessage(chatId, _loc.Get("WelcomeWithRoles", lang, displayName, roleText), cancellationToken: ct);
             return;
         }
          if (text == "/admin")
@@ -410,17 +417,18 @@ public class UpdateHandler
             return;
         }
 
-        var lang = user.LanguageCode ?? "uz"; 
+        var lang = user.LanguageCode ?? "uz";
+        var roles = await EnsureRolesAsync(user);
 
         // Check session for admin actions
         bool isSessionAdmin = _authenticatedAdmins.Contains(chatId);
-        bool isDeputy = user.Role == UserRole.Deputy;
+        bool isDeputy = HasRole(roles, UserRoles.Deputy);
 
         if (data == "sklad_add_product" || data.StartsWith("set_unit_"))
         {
              // Storekeeper actions
         }
-        else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_"))
+        else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_") || data.StartsWith("role_user_select_"))
         {
              if (!isSessionAdmin && !isDeputy)
              {
@@ -451,22 +459,47 @@ public class UpdateHandler
         {
              await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: query.Message.MessageId);
         }
+        else if (data == "admin_role_users")
+        {
+            if (!HasRole(roles, UserRoles.Admin))
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
+                return;
+            }
+
+            var users = await _userRepository.GetAllUsersAsync();
+            if (users.Count == 0)
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoUsers", lang), cancellationToken: ct);
+                return;
+            }
+
+            var buttons = new List<InlineKeyboardButton[]>();
+            foreach (var u in users)
+            {
+                var displayName = BuildUserDisplayName(u);
+                var roleText = BuildRoleListText(GetDisplayRoles(u), lang);
+                var buttonText = $"{displayName} — {roleText}";
+                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(buttonText, $"role_user_select_{u.ChatId}") });
+            }
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel") });
+
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectUserForRole", lang),
+                replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        }
         else if (data.StartsWith("user_select_"))
         {
             var targetId = long.Parse(data.Substring("user_select_".Length));
-            // Show Actions for this user
-            var buttons = new List<InlineKeyboardButton[]>();
-            
-            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Storekeeper", lang), $"set_role_{targetId}_storekeeper") });
-
-            if (user.Role == UserRole.Admin)
-            {
-                 buttons.Insert(0, new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Deputy", lang), $"set_role_{targetId}_deputy") });
-                 buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Admin", lang), $"set_role_{targetId}_admin") });
-            }
-            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", "admin_show_waiting") });
-
-            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+            _roleSelectionReturnCallbacks[chatId] = $"user_select_{targetId}";
+            var markup = BuildRoleSelectionMarkup(targetId, HasRole(roles, UserRoles.Admin), lang, "admin_show_waiting");
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: markup, cancellationToken: ct);
+        }
+        else if (data.StartsWith("role_user_select_"))
+        {
+            var targetId = long.Parse(data.Substring("role_user_select_".Length));
+            _roleSelectionReturnCallbacks[chatId] = $"role_user_select_{targetId}";
+            var markup = BuildRoleSelectionMarkup(targetId, HasRole(roles, UserRoles.Admin), lang, "admin_role_users");
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: markup, cancellationToken: ct);
         }
         else if (data.StartsWith("set_role_"))
         {
@@ -491,7 +524,8 @@ public class UpdateHandler
                 { 
                      InlineKeyboardButton.WithCallbackData(w.Name, $"assign_wh_{w.Id}") 
                 }).ToList();
-                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", $"user_select_{targetId}") });
+                var backCallback = _roleSelectionReturnCallbacks.TryGetValue(chatId, out var back) ? back : $"user_select_{targetId}";
+                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", backCallback) });
                 
                  await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectWarehouse", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
                  return;
@@ -525,7 +559,7 @@ public class UpdateHandler
         }
         else if (data == "admin_add_warehouse")
         {
-            if (user.Role != UserRole.Admin) // Only Admin can add warehouse? Assuming yes for now.
+            if (!HasRole(roles, UserRoles.Admin)) // Only Admin can add warehouse? Assuming yes for now.
             {
                  await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
                  return;
@@ -575,8 +609,7 @@ public class UpdateHandler
         else if (data == "admin_add_customer")
         {
              // Check permissions if needed (Admin only)
-             var userRole = (await _userRepository.GetByChatIdAsync(chatId))?.Role;
-             if (userRole != UserRole.Admin)
+             if (!HasRole(roles, UserRoles.Admin))
              {
                   await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
                   return;
@@ -660,24 +693,156 @@ public class UpdateHandler
 
         await _botClient.AnswerCallbackQuery(query.Id, cancellationToken: ct);
     }
-    
+
+    private async Task<UserRoles> EnsureRolesAsync(BotUser user)
+    {
+        var roles = GetDisplayRoles(user);
+        if (roles != user.Roles)
+        {
+            user.Roles = roles;
+            await _userRepository.UpdateAsync(user);
+        }
+
+        return roles;
+    }
+
+    private static UserRoles MapLegacyRole(UserRole role)
+    {
+        return role switch
+        {
+            UserRole.Admin => UserRoles.Admin | UserRoles.User,
+            UserRole.Deputy => UserRoles.Deputy | UserRoles.User,
+            UserRole.Storekeeper => UserRoles.Storekeeper | UserRoles.User,
+            _ => UserRoles.User
+        };
+    }
+
+    private UserRoles GetDisplayRoles(BotUser user)
+    {
+        var roles = user.Roles == UserRoles.None ? MapLegacyRole(user.Role) : user.Roles;
+        if (!HasRole(roles, UserRoles.User))
+        {
+            roles |= UserRoles.User;
+        }
+        return roles;
+    }
+
+    private static string BuildUserDisplayName(BotUser user)
+    {
+        if (!string.IsNullOrWhiteSpace(user.FullName) && !string.IsNullOrWhiteSpace(user.Username))
+        {
+            return $"{user.FullName} (@{user.Username})";
+        }
+        if (!string.IsNullOrWhiteSpace(user.FullName))
+        {
+            return user.FullName!;
+        }
+        if (!string.IsNullOrWhiteSpace(user.Username))
+        {
+            return $"@{user.Username}";
+        }
+        return user.ChatId.ToString();
+    }
+
+    private static UserRoles? ParseRoleFlag(string roleName)
+    {
+        return roleName switch
+        {
+            "admin" => UserRoles.Admin,
+            "deputy" => UserRoles.Deputy,
+            "storekeeper" => UserRoles.Storekeeper,
+            _ => null
+        };
+    }
+
+    private static bool HasRole(UserRoles roles, UserRoles role)
+    {
+        return (roles & role) == role;
+    }
+
+    private static bool HasElevatedRole(UserRoles roles)
+    {
+        return HasRole(roles, UserRoles.Admin) || HasRole(roles, UserRoles.Deputy) || HasRole(roles, UserRoles.Storekeeper);
+    }
+
+    private string BuildRoleListText(UserRoles roles, string lang)
+    {
+        var names = new List<string>();
+        if (HasRole(roles, UserRoles.Admin)) names.Add(_loc.Get("Role_Admin", lang));
+        if (HasRole(roles, UserRoles.Deputy)) names.Add(_loc.Get("Role_Deputy", lang));
+        if (HasRole(roles, UserRoles.Storekeeper)) names.Add(_loc.Get("Role_Storekeeper", lang));
+
+        if (names.Count == 0)
+        {
+            names.Add(_loc.Get("Role_User", lang));
+        }
+
+        return string.Join(", ", names);
+    }
+
+    private InlineKeyboardMarkup BuildRoleSelectionMarkup(long targetId, bool isAdmin, string lang, string backCallback)
+    {
+        var buttons = new List<InlineKeyboardButton[]>();
+
+        buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Storekeeper", lang), $"set_role_{targetId}_storekeeper") });
+
+        if (isAdmin)
+        {
+            buttons.Insert(0, new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Deputy", lang), $"set_role_{targetId}_deputy") });
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Admin", lang), $"set_role_{targetId}_admin") });
+        }
+
+        buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", backCallback) });
+        return new InlineKeyboardMarkup(buttons);
+    }
+
+    private string GetRoleDisplayName(UserRoles role, string lang)
+    {
+        return role switch
+        {
+            UserRoles.Admin => _loc.Get("Role_Admin", lang),
+            UserRoles.Deputy => _loc.Get("Role_Deputy", lang),
+            UserRoles.Storekeeper => _loc.Get("Role_Storekeeper", lang),
+            _ => _loc.Get("Role_User", lang)
+        };
+    }
+
     private async Task AssignRole(long adminChatId, long targetUserId, string roleName, int? warehouseId, string lang, CancellationToken ct)
     {
         var targetUser = await _userRepository.GetByChatIdAsync(targetUserId);
         if (targetUser != null)
         {
-            switch (roleName)
+            var roleFlag = ParseRoleFlag(roleName);
+            if (roleFlag == null)
             {
-                case "deputy": targetUser.Role = UserRole.Deputy; break;
-                case "storekeeper": targetUser.Role = UserRole.Storekeeper; break;
-                case "admin": targetUser.Role = UserRole.Admin; break;
+                return;
+            }
+
+            var existingRoles = targetUser.Roles == UserRoles.None ? MapLegacyRole(targetUser.Role) : targetUser.Roles;
+            if (!HasRole(existingRoles, UserRoles.User))
+            {
+                existingRoles |= UserRoles.User;
+            }
+
+            targetUser.Roles = existingRoles | roleFlag.Value;
+
+            // Keep legacy Role in sync with latest assigned role
+            switch (roleFlag.Value)
+            {
+                case UserRoles.Deputy: targetUser.Role = UserRole.Deputy; break;
+                case UserRoles.Storekeeper: targetUser.Role = UserRole.Storekeeper; break;
+                case UserRoles.Admin: targetUser.Role = UserRole.Admin; break;
             }
             targetUser.Status = UserStatus.Active;
-            targetUser.WarehouseId = warehouseId;
+            if (warehouseId.HasValue)
+            {
+                targetUser.WarehouseId = warehouseId;
+            }
             
             await _userRepository.UpdateAsync(targetUser);
 
-            await _botClient.SendMessage(adminChatId, _loc.Get("RoleUpdated", lang, roleName), cancellationToken: ct);
+            var roleDisplayName = GetRoleDisplayName(roleFlag.Value, lang);
+            await _botClient.SendMessage(adminChatId, _loc.Get("RoleUpdated", lang, roleDisplayName), cancellationToken: ct);
             if (warehouseId.HasValue)
             {
                  var wh = await _warehouseRepository.GetByIdAsync(warehouseId.Value);
@@ -686,7 +851,8 @@ public class UpdateHandler
 
             try {
                 var targetLang = targetUser.LanguageCode ?? "uz";
-                await _botClient.SendMessage(targetUserId, _loc.Get("YourRoleUpdated", targetLang, roleName), cancellationToken: ct);
+                var targetRoleDisplay = GetRoleDisplayName(roleFlag.Value, targetLang);
+                await _botClient.SendMessage(targetUserId, _loc.Get("YourRoleUpdated", targetLang, targetRoleDisplay), cancellationToken: ct);
             } catch {} 
         }
     }
@@ -698,6 +864,7 @@ public class UpdateHandler
         var buttons = new List<InlineKeyboardButton[]>
         {
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Roles", lang), "admin_role_users") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Warehouses", lang), "admin_warehouses_menu"), InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Customers", lang), "admin_customers_menu") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Close", lang), "admin_close") }
