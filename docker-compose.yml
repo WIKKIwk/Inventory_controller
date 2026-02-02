@@ -26,3 +26,4 @@ services:
 
 volumes:
   postgres_data:
+    name: inventory_postgres_data

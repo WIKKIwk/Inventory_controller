@@ -23,6 +23,7 @@ public class UpdateHandler
     private static readonly Dictionary<long, string> _userStates = new(); // State
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
     private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
+    private static readonly Dictionary<long, int> _adminPasswordPromptMessageIds = new();
     private static readonly Dictionary<long, string> _tempProductData = new(); // ChatId -> ProductName
     private static readonly HashSet<long> _authenticatedAdmins = new(); // Session-based admins
 
@@ -110,12 +111,7 @@ public class UpdateHandler
             if (state == "SET_ADMIN_PASSWORD")
             {
                 await _configRepository.SetValueAsync("AdminPassword", text);
-                
-                // Save user as Admin in DB permanently
-                user.Role = UserRole.Admin;
-                user.Status = UserStatus.Active;
-                await _userRepository.UpdateAsync(user);
-                
+                _authenticatedAdmins.Add(chatId);
                 _userStates.Remove(chatId);
                 await _botClient.SendMessage(chatId, _loc.Get("PasswordSet", lang), cancellationToken: ct);
                 await ShowAdminPanel(chatId, lang, ct);
@@ -123,24 +119,44 @@ public class UpdateHandler
             }
             else if (state == "ENTER_ADMIN_PASSWORD")
             {
-                // Compact Mode: Delete user input
                 try { await _botClient.DeleteMessage(chatId, message.MessageId, cancellationToken: ct); } catch {}
 
                 var adminPass = await _configRepository.GetValueAsync("AdminPassword");
                 if (text == adminPass)
                 {
-                    // Save user as Admin in DB permanently
-                    user.Role = UserRole.Admin;
-                    user.Status = UserStatus.Active;
-                    await _userRepository.UpdateAsync(user);
-                    
+                    _authenticatedAdmins.Add(chatId);
                     _userStates.Remove(chatId);
-                    await ShowAdminPanel(chatId, lang, ct);
+
+                    int? promptMsgId = null;
+                    if (_adminPasswordPromptMessageIds.TryGetValue(chatId, out var storedPromptId))
+                    {
+                        promptMsgId = storedPromptId;
+                    }
+                    else if (_adminPanelMessageIds.TryGetValue(chatId, out var existingId))
+                    {
+                        promptMsgId = existingId;
+                    }
+                    else if (message.ReplyToMessage?.From?.IsBot == true)
+                    {
+                        promptMsgId = message.ReplyToMessage.MessageId;
+                    }
+
+                    if (promptMsgId.HasValue)
+                    {
+                        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: promptMsgId.Value);
+                    }
+                    else
+                    {
+                        await ShowAdminPanel(chatId, lang, ct);
+                    }
+
+                    _adminPasswordPromptMessageIds.Remove(chatId);
                 }
                 else
                 {
                     await _botClient.SendMessage(chatId, _loc.Get("IncorrectPassword", lang), cancellationToken: ct);
                     _userStates.Remove(chatId);
+                    _adminPasswordPromptMessageIds.Remove(chatId);
                 }
                 return;
             }
@@ -326,7 +342,11 @@ public class UpdateHandler
 
         if (text == "/start")
         {
-            await _botClient.SendMessage(chatId, $"Hello {user.FullName}! Language: {user.LanguageCode}", cancellationToken: ct);
+            var roleKey = $"Role_{user.Role}";
+            var roleText = _loc.Get(roleKey, lang);
+            var yourRoleMsg = _loc.Get("YourRole", lang, roleText);
+            
+            await _botClient.SendMessage(chatId, $"Salom {user.FullName}!\n{yourRoleMsg}", cancellationToken: ct);
             return;
         }
          if (text == "/admin")
@@ -335,28 +355,17 @@ public class UpdateHandler
 
             var password = await _configRepository.GetValueAsync("AdminPassword");
             
-            _logger.LogInformation("Admin password check: IsNull={IsNull}, IsEmpty={IsEmpty}, Value={Value}", 
-                password == null, string.IsNullOrEmpty(password), password ?? "NULL");
-            
             if (string.IsNullOrEmpty(password))
             {
-                _logger.LogWarning("Password is empty, switching to SET_ADMIN_PASSWORD state");
                 _userStates[chatId] = "SET_ADMIN_PASSWORD";
                 await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
                 return;
             }
 
-            // Check user role from DB
-            if (user.Role == UserRole.Admin || user.Role == UserRole.Deputy)
-            {
-               await ShowAdminPanel(chatId, lang, ct);
-            }
-            else
-            {
-                // Not admin, ask for password
-                _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
-                await _botClient.SendMessage(chatId, _loc.Get("EnterPassword", lang), cancellationToken: ct);
-            }
+            // Always ask for password (ignore session)
+            _userStates[chatId] = "ENTER_ADMIN_PASSWORD";
+            var passwordMsg = await _botClient.SendMessage(chatId, _loc.Get("EnterExistingPassword", lang), cancellationToken: ct);
+            _adminPasswordPromptMessageIds[chatId] = passwordMsg.MessageId;
             return;
         }
         else if (text == "/sklad")
@@ -381,7 +390,7 @@ public class UpdateHandler
             await _userRepository.UpdateAsync(user);
 
             // Delete the "Select Language" message
-            try { await _botClient.DeleteMessageAsync(chatId, query.Message.MessageId, cancellationToken: ct); } catch {}
+            try { await _botClient.DeleteMessage(chatId, query.Message.MessageId, cancellationToken: ct); } catch {}
             
             // Check Admin Password
             var pass = await _configRepository.GetValueAsync("AdminPassword");
@@ -403,20 +412,19 @@ public class UpdateHandler
 
         var lang = user.LanguageCode ?? "uz"; 
 
-        // Check admin/deputy role from DB for admin actions
-        bool isAdmin = user.Role == UserRole.Admin || user.Role == UserRole.Deputy;
+        // Check session for admin actions
+        bool isSessionAdmin = _authenticatedAdmins.Contains(chatId);
+        bool isDeputy = user.Role == UserRole.Deputy;
 
-        // Special case: Sklad callbacks are for Storekeepers
         if (data == "sklad_add_product" || data.StartsWith("set_unit_"))
         {
-             // These are handled below for storekeeper role
+             // Storekeeper actions
         }
         else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_"))
         {
-             // For admin callbacks, require admin role
-             if (!isAdmin)
+             if (!isSessionAdmin && !isDeputy)
              {
-                 await _botClient.AnswerCallbackQuery(query.Id, "Unauthorized", cancellationToken: ct);
+                 await _botClient.AnswerCallbackQuery(query.Id, "Session expired. Send /admin", cancellationToken: ct);
                  return;
              }
         }
@@ -699,11 +707,21 @@ public class UpdateHandler
 
         if (messageIdToEdit.HasValue)
         {
-            try { await _botClient.EditMessageText(chatId, messageIdToEdit.Value, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct); } catch {}
+            try
+            {
+                await _botClient.EditMessageText(chatId, messageIdToEdit.Value, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+                _adminPanelMessageIds[chatId] = messageIdToEdit.Value;
+                return;
+            }
+            catch {}
         }
-        else
-        {
-            await _botClient.SendMessage(chatId, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
-        }
+
+        var sent = await _botClient.SendMessage(chatId, text, replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        _adminPanelMessageIds[chatId] = sent.MessageId;
+    }
+
+    private async Task ShowAdminPanelEdit(long chatId, int messageId, string lang, CancellationToken ct)
+    {
+        await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: messageId);
     }
 }
