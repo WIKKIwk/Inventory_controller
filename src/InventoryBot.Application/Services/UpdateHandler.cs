@@ -22,6 +22,7 @@ public class UpdateHandler
 
     private static readonly Dictionary<long, string> _userStates = new(); // State
     private static readonly Dictionary<long, long> _pendingUserRoleAssignment = new(); // AdminChatId -> TargetUserId
+    private static readonly Dictionary<long, string> _roleSelectionReturnCallbacks = new(); // AdminChatId -> Callback
     private static readonly Dictionary<long, int> _adminPanelMessageIds = new();
     private static readonly Dictionary<long, int> _adminPasswordPromptMessageIds = new();
     private static readonly Dictionary<long, string> _tempProductData = new(); // ChatId -> ProductName
@@ -427,7 +428,7 @@ public class UpdateHandler
         {
              // Storekeeper actions
         }
-        else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_"))
+        else if (data.StartsWith("admin_") || data.StartsWith("user_select_") || data.StartsWith("set_role_") || data.StartsWith("role_user_select_"))
         {
              if (!isSessionAdmin && !isDeputy)
              {
@@ -458,22 +459,47 @@ public class UpdateHandler
         {
              await ShowAdminPanel(chatId, lang, ct, messageIdToEdit: query.Message.MessageId);
         }
+        else if (data == "admin_role_users")
+        {
+            if (!HasRole(roles, UserRoles.Admin))
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, "Restricted", cancellationToken: ct);
+                return;
+            }
+
+            var users = await _userRepository.GetAllUsersAsync();
+            if (users.Count == 0)
+            {
+                await _botClient.AnswerCallbackQuery(query.Id, _loc.Get("NoUsers", lang), cancellationToken: ct);
+                return;
+            }
+
+            var buttons = new List<InlineKeyboardButton[]>();
+            foreach (var u in users)
+            {
+                var displayName = BuildUserDisplayName(u);
+                var roleText = BuildRoleListText(GetDisplayRoles(u), lang);
+                var buttonText = $"{displayName} — {roleText}";
+                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(buttonText, $"role_user_select_{u.ChatId}") });
+            }
+            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Back", lang), "admin_back_to_panel") });
+
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectUserForRole", lang),
+                replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+        }
         else if (data.StartsWith("user_select_"))
         {
             var targetId = long.Parse(data.Substring("user_select_".Length));
-            // Show Actions for this user
-            var buttons = new List<InlineKeyboardButton[]>();
-            
-            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Storekeeper", lang), $"set_role_{targetId}_storekeeper") });
-
-            if (user.Role == UserRole.Admin)
-            {
-                 buttons.Insert(0, new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Deputy", lang), $"set_role_{targetId}_deputy") });
-                 buttons.Add(new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Action_Admin", lang), $"set_role_{targetId}_admin") });
-            }
-            buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", "admin_show_waiting") });
-
-            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
+            _roleSelectionReturnCallbacks[chatId] = $"user_select_{targetId}";
+            var markup = BuildRoleSelectionMarkup(targetId, HasRole(roles, UserRoles.Admin), lang, "admin_show_waiting");
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: markup, cancellationToken: ct);
+        }
+        else if (data.StartsWith("role_user_select_"))
+        {
+            var targetId = long.Parse(data.Substring("role_user_select_".Length));
+            _roleSelectionReturnCallbacks[chatId] = $"role_user_select_{targetId}";
+            var markup = BuildRoleSelectionMarkup(targetId, HasRole(roles, UserRoles.Admin), lang, "admin_role_users");
+            await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectRole", lang, targetId), replyMarkup: markup, cancellationToken: ct);
         }
         else if (data.StartsWith("set_role_"))
         {
@@ -498,7 +524,8 @@ public class UpdateHandler
                 { 
                      InlineKeyboardButton.WithCallbackData(w.Name, $"assign_wh_{w.Id}") 
                 }).ToList();
-                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", $"user_select_{targetId}") });
+                var backCallback = _roleSelectionReturnCallbacks.TryGetValue(chatId, out var back) ? back : $"user_select_{targetId}";
+                buttons.Add(new [] { InlineKeyboardButton.WithCallbackData("🔙", backCallback) });
                 
                  await _botClient.EditMessageText(chatId, query.Message.MessageId, _loc.Get("SelectWarehouse", lang), replyMarkup: new InlineKeyboardMarkup(buttons), cancellationToken: ct);
                  return;
@@ -837,6 +864,7 @@ public class UpdateHandler
         var buttons = new List<InlineKeyboardButton[]>
         {
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Notifications", lang, pendingCount), "admin_show_waiting") },
+            new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Roles", lang), "admin_role_users") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Warehouses", lang), "admin_warehouses_menu"), InlineKeyboardButton.WithCallbackData(_loc.Get("Menu_Customers", lang), "admin_customers_menu") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_ChangePass", lang), "admin_change_pass") },
             new [] { InlineKeyboardButton.WithCallbackData(_loc.Get("Btn_Close", lang), "admin_close") }
